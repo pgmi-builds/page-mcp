@@ -115,6 +115,11 @@ a consuming agent can use to filter dev tooling out of an end-user surface.
 - **`script-src` without `'unsafe-eval'`** kills `dev_eval`. It fails with a
   readable message rather than a crash; the CSP-safe path is to have the app
   register named tools. `dev_snapshot` and the act tools are unaffected.
+- **Unknown and mistyped arguments are rejected, not ignored.** `dev_scroll {delta_y: 200}`
+  once scrolled by 0 and reported success. Validation now refuses the call before it runs:
+  `invalid arguments — unknown property "delta_y" — accepted: ref, dx, dy, include_snapshot.`
+  A third-party wrapper that forwards extra fields will be refused outright rather than
+  silently mis-executing. That is deliberate; opt out per tool with `additionalProperties: true`.
 - **Some tools cannot exist in the page.** `dev_upload` takes a URL or base64
   because the page cannot read a path on the developer's disk. Uploading a host
   path is a job for the agent's CDP layer (`DOM.setFileInputFiles`); screenshots
