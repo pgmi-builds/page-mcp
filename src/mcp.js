@@ -67,6 +67,48 @@ function boot() {
     }
   }
   booted = true;
+  restoreDroppedAnnotations();
+}
+
+/**
+ * Put back the annotation keys this runtime throws away.
+ *
+ * Chrome 151 native and `@mcp-b/webmcp-polyfill` 5.1.0 both normalize a tool's
+ * annotations down to a two-key allowlist (`readOnlyHint`,
+ * `untrustedContentHint`), silently dropping the two that carry our safety
+ * story: `debugging` ("this is dev tooling, end-user agents should ignore it")
+ * and `consequentialHint`. Measured in docs/research/polyfill-annotation-verification.md.
+ *
+ * We do not switch polyfills over this. The versions that keep the keys (the
+ * 6.0.0 beta and the CG's own polyfill) also change `executeTool` to take an
+ * input OBJECT, while native Chrome and chrome-devtools-mcp pass a JSON string
+ * — trading an annotation for an interop break, in the wrong direction.
+ *
+ * We know what we registered, so we can merge it back on the way out. Runtime
+ * values win where they exist; this only fills in what was dropped, and it is a
+ * no-op on any implementation that stops dropping them.
+ */
+function restoreDroppedAnnotations() {
+  const mc = ctx();
+  if (!mc || typeof mc.getTools !== "function") return;
+  const original = mc.getTools.bind(mc);
+  const patched = async (opts) => {
+    const tools = await original(opts);
+    if (!Array.isArray(tools)) return tools;
+    return tools.map((t) => {
+      const def = local.get(t?.name);
+      if (!def) return t;
+      return {
+        ...t,
+        annotations: { debugging: true, ...(def.annotations ?? {}), ...(t.annotations ?? {}) },
+      };
+    });
+  };
+  try {
+    mc.getTools = patched;
+  } catch {
+    /* a frozen/readonly implementation — the annotations stay dropped */
+  }
 }
 
 /** The live modelContext, or undefined outside a document. */

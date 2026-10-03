@@ -127,8 +127,18 @@ a consuming agent can use to filter dev tooling out of an end-user surface.
   are likewise a CDP-side concern (`canvas.toDataURL` only works when the app
   preserved the drawing buffer).
 - **`debugging` is dropped on Chrome 151** — both native and polyfilled
-  `getTools()` returned only `readOnlyHint` / `untrustedContentHint`. The
-  annotation is documented as available from Chrome 156.
+- **Annotations are not propagated by the runtime — so we restore them.** On
+  Chrome 151, native `getTools()` returns `readOnlyHint: false` even for a tool
+  that registered `true`, and the bundled polyfill
+  (`@mcp-b/webmcp-polyfill@5.1.0`) hard-drops `debugging` and
+  `consequentialHint` entirely. Since we know what we registered, `getTools()`
+  is wrapped to merge our annotations back in, so a consumer now sees
+  `debugging: true` on both runtimes.
+  Do **not** "fix" this by switching to the 6.0.0-beta polyfill or the CG's
+  own polyfill: they preserve the keys but change `executeTool` to take an
+  input **object**, while native Chrome and chrome-devtools-mcp pass a JSON
+  **string**. That trades an annotation for an interop break.
+  Measured: docs/research/polyfill-annotation-verification.md.
 - **Secure context required.** `document.modelContext` is `[SecureContext]`.
   `https://` and `localhost` / `127.0.0.1` qualify; plain-HTTP on a LAN IP does
   not.

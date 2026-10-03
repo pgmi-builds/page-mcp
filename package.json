@@ -13,5 +13,8 @@
     "@mcp-b/webmcp-polyfill": "^5.1.0",
     "esbuild": "^0.25.0",
     "puppeteer-core": "^25.12.0"
+  },
+  "dependencies": {
+    "dom-accessibility-api": "^0.7.1"
   }
 }

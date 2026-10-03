@@ -22,6 +22,10 @@
  * 4. A CANVAS PAGE HAS (ALMOST) NO DOM. That is not a bug in this snapshotter
  *    — it is the reason the `eval` tool exists next to it.
  */
+// Deep import on purpose: the package root re-exports the description and role
+// algorithms as well, which costs ~10 KB gzipped instead of ~5. We want exactly
+// one function, and nothing here should be hand-rolled (see docs/08 §3.3).
+import { computeAccessibleName } from "../node_modules/dom-accessibility-api/dist/accessible-name.mjs";
 
 const INTERACTIVE_SELECTOR = [
   "a[href]",
@@ -194,7 +198,29 @@ export function cssPath(el) {
   return parts.join(" > ");
 }
 
+/**
+ * The accessible name of an element.
+ *
+ * This used to be hand-rolled, and it was wrong in ways that matter: an
+ * `<input type=submit value="Go">` got no name at all, an `aria-hidden` icon
+ * inside a button leaked into the button's name ("* Delete"), and hidden
+ * elements were named as if they were visible. The accessible name is how an
+ * agent identifies an element, so being wrong here means acting on the wrong
+ * node. `dom-accessibility-api` (MIT, 5 KB gzipped) implements the spec, so we
+ * use it and keep the old heuristic only as a fallback.
+ */
 export function accessibleName(el) {
+  try {
+    const n = computeAccessibleName(el);
+    if (n) return clip(n.replace(/\s+/g, " ").trim(), 120);
+  } catch {
+    /* fall through to the heuristic below */
+  }
+  return heuristicName(el);
+}
+
+/** Kept for the cases where the spec computation throws on a detached node. */
+function heuristicName(el) {
   const aria = el.getAttribute("aria-label");
   if (aria) return aria.trim();
 
@@ -216,6 +242,8 @@ export function accessibleName(el) {
     }
     const wrapping = el.closest("label");
     if (wrapping?.textContent) return wrapping.textContent.trim();
+    const value = el.getAttribute("value");
+    if (value && ["submit", "reset", "button"].includes(el.type)) return value.trim();
     const ph = el.getAttribute("placeholder");
     if (ph) return ph.trim();
     const nm = el.getAttribute("name");
