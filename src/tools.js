@@ -14,6 +14,7 @@ import { fillElement, highlight, hover, pressKey, scrollBy, scrollIntoView, sele
 import { readLogs, clearLogs } from "./capture.js";
 import { readNetwork, clearNetwork } from "./network.js";
 import { storageOp } from "./storage.js";
+import { boxOf, auditGeometry } from "./geometry.js";
 
 const refProp = (desc) => ({ type: "string", description: desc });
 
@@ -130,6 +131,110 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         required: ["ref"],
       },
       run: ({ ref }) => snap.describe(String(ref)),
+    },
+    {
+      name: name("find"),
+      title: "Find elements",
+      description:
+        "Search the page for elements matching a word or phrase — by accessible name, the element's own " +
+        "text, value, placeholder, aria-label or title, case-insensitively — and get back live refs you can " +
+        "act on with click/fill/type right away. Use this instead of a full snapshot when you already know " +
+        "roughly what you are looking for: a snapshot is budgeted to DESCRIBE the page, so on a long page " +
+        "the element you want falls below the cut and that reads as if it did not exist. `query` is a " +
+        "substring, not a selector. Refs are the same stable ones a snapshot mints, so mixing find and " +
+        "snapshot is safe.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Text to look for (substring, case-insensitive)." },
+          limit: { type: "number", description: "How many matches to return (default 10, max 50)." },
+          include_hidden: {
+            type: "boolean",
+            description: "Also match elements that are hidden or not rendered (default false).",
+          },
+        },
+        required: ["query"],
+      },
+      run: ({ query, limit, include_hidden }) => {
+        const { total, rows, truncated } = snap.find(query, {
+          limit,
+          includeHidden: include_hidden,
+        });
+        if (!total) {
+          return (
+            `No element matching ${JSON.stringify(String(query))}. Hidden elements are skipped unless ` +
+            `include_hidden is set, and a canvas- or WebGL-driven page may have no text to match at all — ` +
+            `take a snapshot to see what this page exposes.`
+          );
+        }
+        return (
+          `${total} match(es) for ${JSON.stringify(String(query))}` +
+          `${truncated ? ` — showing the first ${rows.length}` : ""}\n${rows.join("\n")}`
+        );
+      },
+    },
+    {
+      name: name("box"),
+      title: "Element geometry",
+      description:
+        "Exact geometry and hit-test state for one element — the handoff for an element-scoped screenshot. " +
+        "A page cannot rasterize itself, so the pixels belong to your CDP layer; this supplies the numbers " +
+        "and pre-empts the two ways that goes wrong. Use documentRect (NOT viewportRect) as the clip, with " +
+        `scale: devicePixelRatio and captureBeyondViewport: true. hitTestable false means a click here does ` +
+        "nothing, and coveredBy names what is actually on top — a disabled element reports hitTestable " +
+        "false rather than occluded, which is a different bug with a different fix.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          ref: refProp("Element ref from the snapshot."),
+        },
+        required: ["ref"],
+      },
+      run: ({ ref }) => {
+        const el = need(String(ref));
+        return JSON.stringify({ ref, ...boxOf(el) }, null, 1);
+      },
+    },
+    {
+      name: name("geometry_audit"),
+      title: "Audit layout defects",
+      description:
+        "Scan the page for layout defects that are provable from the box tree alone, no screenshot needed: " +
+        "text clipped by its container, interactive elements with no box (unclickable by construction), " +
+        "images that failed to decode, sideways page scroll, fonts still loading. Use it after a CSS or " +
+        "layout change, or before claiming a visual bug is fixed — these are assertions about the layout, " +
+        "not impressions about how it looks. Contrast and paint-order problems are NOT covered; those " +
+        "need pixels.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          max_examples: { type: "number", description: "Examples to show per category (default 4)." },
+        },
+      },
+      run: ({ max_examples }) => {
+        const { scanned, categories, page } = auditGeometry({ maxExamples: max_examples });
+        if (!categories.length && !page.length) {
+          return (
+            `No layout defects found in ${scanned} element(s). (Checks: clipped text, zero-size ` +
+            `interactive elements, broken images, sideways scroll.)`
+          );
+        }
+        const parts = [];
+        for (const { kind, count, examples } of categories) {
+          const rows = examples
+            .map(({ el, why }) => {
+              const ref = snap.refFor(el);
+              return `    [${ref}] ${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""} — ${why}`;
+            })
+            .join("\n");
+          parts.push(`  ${kind}: ${count} found${count > examples.length ? ` (showing ${examples.length})` : ""}\n${rows}`);
+        }
+        if (page.length) parts.push(`  page:\n${page.map((p) => `    ${p}`).join("\n")}`);
+        return `Layout audit — ${scanned} element(s) scanned:\n${parts.join("\n")}`;
+      },
     },
     {
       name: name("click"),

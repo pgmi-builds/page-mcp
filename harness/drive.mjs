@@ -234,6 +234,61 @@ async function run({ label, native }) {
       `camera ${JSON.parse(posAfter).camera.position.map((n) => +n.toFixed(2)).join(", ")}`,
     );
 
+    // ---- 8e. find + box -----------------------------------------------------
+    // find must return an actionable ref, and interactive matches must outrank
+    // a plain sentence that merely contains the same word.
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML =
+        '<p>PROBEWORD is mentioned in this sentence.</p>' +
+        '<button aria-label="PROBEWORD control">PROBEWORD control</button>';
+      document.body.appendChild(d);
+    });
+    const found = await call("dev_find", { query: "PROBEWORD" });
+    const findRef = found.match(/\[(e\d+)\]/)?.[1];
+    const clickedFound = findRef ? await call("dev_click", { ref: findRef, include_snapshot: false }) : "";
+    record(
+      `${label}: find returns a live, actionable ref and ranks controls first`,
+      /button/.test(found.split("\n")[1] ?? "") && /Clicked/.test(clickedFound),
+      found.split("\n").slice(0, 3).join("\n"),
+    );
+
+    const boxLine = found.split("\n").find((l) => l.includes("control")) ?? "";
+    const boxRef = boxLine.match(/\[(e\d+)\]/)?.[1];
+    const box = boxRef ? JSON.parse(await call("dev_box", { ref: boxRef })) : {};
+    record(
+      `${label}: box hands CDP-ready document coordinates and hit-test truth`,
+      // documentRect must be viewportRect plus scroll — that sum is exactly the
+      // thing an agent gets wrong when it crops the neighbour. And hit-test
+      // state must be COHERENT rather than true: on this page the probe button
+      // genuinely sits under the full-viewport canvas, so hitTestable false with
+      // coveredBy set is the correct answer, and asserting `true` here would
+      // reward the bug the tool exists to expose.
+      !!box.documentRect &&
+        box.documentRect.w > 0 &&
+        Math.abs(box.documentRect.x - (box.viewportRect.x + box.scroll.x)) < 0.5 &&
+        Math.abs(box.documentRect.y - (box.viewportRect.y + box.scroll.y)) < 0.5 &&
+        (box.hitTestable ? box.coveredBy === null : typeof box.coveredBy === "string"),
+      `documentRect=${JSON.stringify(box.documentRect)} hitTestable=${box.hitTestable} coveredBy=${JSON.stringify(box.coveredBy)}`,
+    );
+
+    // ---- 8f. geometry audit -------------------------------------------------
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML =
+        '<button style="width:0;height:0;border:0;padding:0" aria-label="PROBEZERO">go</button>' +
+        '<div style="width:90px;white-space:nowrap;overflow:hidden;font:14px monospace">PROBECLIPPEDTEXTTHATISFARTOOLONGTOFITINSIDE90PIXELS</div>';
+      document.body.appendChild(d);
+    });
+    const audit = await call("dev_geometry_audit", {});
+    record(
+      `${label}: audit proves clipped text and unclickable controls without pixels`,
+      // Not /PROBEZERO/: the audit reports tag#id, not aria-labels, so the label
+      // cannot appear in the output by construction.
+      /clipped-text/.test(audit) && /PROBECLIPPED/.test(audit) && /zero-size/.test(audit) && /interactive but 0x0/.test(audit),
+      audit.split("\n").slice(0, 4).join("\n"),
+    );
+
     // ---- 10. installing twice must not half-register ----------------------
     // Duplicate tool names are rejected by the browser, and a rejected mirror
     // is not fatal to the local registry — so a second copy used to look like

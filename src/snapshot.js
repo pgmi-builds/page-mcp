@@ -27,7 +27,7 @@
 // one function, and nothing here should be hand-rolled (see docs/08 §3.3).
 import { computeAccessibleName } from "../node_modules/dom-accessibility-api/dist/accessible-name.mjs";
 
-const INTERACTIVE_SELECTOR = [
+export const INTERACTIVE_SELECTOR = [
   "a[href]",
   "button",
   "input",
@@ -82,8 +82,84 @@ export class Snapshotter {
     return this.elToRef.get(el);
   }
 
+  /**
+   * Search the live DOM for elements matching a query, minting refs for them.
+   *
+   * This exists next to snapshot() because the two answer different questions.
+   * A snapshot describes the page and is budgeted for that; when the model
+   * already knows roughly what it wants ("the checkout button", "the error
+   * about the card number"), scanning outline lines to find one is the wrong
+   * shape — and on a long page the element falls below the budget cut, which is
+   * indistinguishable from it not existing (the ambiguity budgetNotice exists
+   * to prevent).
+   *
+   * Matches accessible name, the element's own text (not its descendants', so
+   * a match does not fire on every ancestor), value, placeholder, aria-label
+   * and title, case-insensitively. Interactive elements win over plain text,
+   * because the ref is usually going to be acted on.
+   */
+  find(query, { limit = 10, includeHidden = false } = {}) {
+    const scope = typeof document === "undefined" ? null : document.body;
+    const q = String(query ?? "").trim().toLowerCase();
+    if (!scope || !q) return { total: 0, rows: [] };
+
+    const ownText = (el) => {
+      let s = "";
+      for (const n of el.childNodes) if (n.nodeType === 3) s += n.textContent;
+      return s.replace(/\s+/g, " ").trim();
+    };
+    const fieldsOf = (el, textOnly = false) =>
+      [
+        // The computed name is only trustworthy for interactive elements. On a
+        // generic container it is "name from content" — the concatenated text of
+        // every descendant — so matching on it makes a wrapper div shadow the
+        // button inside it. Plain-text elements match on their own text instead.
+        ...(textOnly ? [] : [["name", accessibleName(el)]]),
+        ["text", ownText(el)],
+        ["value", typeof el.value === "string" ? el.value : ""],
+        ["placeholder", el.getAttribute?.("placeholder") ?? ""],
+        ["label", el.getAttribute?.("aria-label") ?? ""],
+        ["title", el.getAttribute?.("title") ?? ""],
+      ].filter(([, v]) => v && String(v).toLowerCase().includes(q));
+
+    const hits = new Map();
+    for (const el of scope.querySelectorAll(INTERACTIVE_SELECTOR)) {
+      if (!includeHidden && isHidden(el)) continue;
+      const f = fieldsOf(el);
+      if (f.length) hits.set(el, f[0]);
+    }
+    const interactive = new Set(scope.querySelectorAll(INTERACTIVE_SELECTOR));
+    for (const el of scope.querySelectorAll("body *")) {
+      if (interactive.has(el) || hits.has(el)) continue;
+      if (!includeHidden && isHidden(el)) continue;
+      const f = fieldsOf(el, true);
+      if (f.length) hits.set(el, f[0]);
+    }
+
+    // Interactive matches first (each group in document order). A query that
+    // hits both a control and a sentence mentioning the same word is ambiguous,
+    // and the control is almost always what the ref is for. The doc comment on
+    // this method promises this; the plain document-order sort used to defeat it.
+    const docOrder = (a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING ? 1 : -1;
+    const ordered = [
+      ...[...hits.keys()].filter((el) => interactive.has(el)).sort(docOrder),
+      ...[...hits.keys()].filter((el) => !interactive.has(el)).sort(docOrder),
+    ];
+    const rows = ordered.slice(0, Math.min(Math.max(Number(limit) || 10, 1), 50)).map((el) => {
+      const ref = this.refFor(el);
+      const [field, value] = fieldsOf(el)[0];
+      const snippet = clip(String(value).replace(/\s+/g, " ").trim(), 90);
+      // "control" is the snapshot's word for an unknown role; for a plain text
+      // element the tag is the more useful thing to show.
+      const role = interactive.has(el) ? roleOf(el) : el.tagName.toLowerCase();
+      return `[${ref}] ${role} ${JSON.stringify(accessibleName(el) || "(no label)")} — ${field}: ${snippet}`;
+    });
+
+    return { total: ordered.length, rows, truncated: ordered.length > rows.length };
+  }
+
   snapshot({ root, maxNodes = 200, includeHidden = false } = {}) {
-    if (typeof document === "undefined") return "(no document)";
     const scope = root ?? document.body;
     if (!scope) return "(no body)";
 

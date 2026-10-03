@@ -87,6 +87,9 @@ to expose them.
 |---|---|
 | `dev_snapshot` | Text outline of the page; stable refs; `include_hidden` |
 | `dev_read` | Text, attrs, computed style, CSS path for one ref |
+| `dev_find` | Search by word/phrase, get live refs — no full snapshot needed |
+| `dev_box` | Geometry + hit-test state; the handoff for a CDP element screenshot |
+| `dev_geometry_audit` | Prove clipped text / unclickable / broken-image defects without pixels |
 | `dev_click` | Real pointer/mouse sequence, then native click |
 | `dev_fill` | Set one field's value, or a whole form in one call (React/Vue-aware) |
 | `dev_type` | Per-keystroke typing for autocomplete-style inputs |
