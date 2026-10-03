@@ -157,8 +157,12 @@ switch (cmd) {
   }
 
   case "call": {
-    const name = args[0];
-    const input = args[1] ? JSON.parse(args[1]) : {};
+    // `--json` gives scripted callers an unambiguous {ok, tool, result} instead
+    // of forcing them to pattern-match the result text to decide success.
+    const asJson = args.includes("--json");
+    const positional = args.filter((a) => a !== "--json");
+    const name = positional[0];
+    const input = positional[1] ? JSON.parse(positional[1]) : {};
     if (!name) {
       out("usage: call <tool> [json]");
       process.exit(2);
@@ -176,15 +180,47 @@ switch (cmd) {
         name,
         input,
       );
-      out(result);
+      const failed =
+        typeof result === "string" && (/^Error from |^Error: /.test(result) || /^no tool named /.test(result));
+      if (asJson) {
+        out(JSON.stringify({ ok: !failed, tool: name, result }, null, 2));
+      } else {
+        out(result);
+      }
       // Tools report failure as a RETURNED message (a throw would surface as an
-      // opaque DOMException and tell the caller nothing), so the exit code has
-      // to be derived from the text — otherwise a hard failure looks like success
+      // opaque DOMException and tell the caller nothing), so the status has to
+      // be derived from the text — otherwise a hard failure looks like success
       // to anything scripting this.
-      if (typeof result === "string" && /^Error from |^Error: /.test(result)) process.exitCode = 1;
+      if (failed) process.exitCode = 1;
     } catch (e) {
       out(`call failed: ${e.message}`);
       process.exitCode = 1;
+    }
+    browser.disconnect();
+    break;
+  }
+
+  case "upload": {
+    // The CDP-side counterpart to the page's dev_upload, and the ONLY way to
+    // move a file from the developer's disk into the page: an in-page tool
+    // cannot read host paths at all.  usage: upload <path...> [--selector <css>]
+    const selIdx = args.indexOf("--selector");
+    const selector = selIdx >= 0 ? args[selIdx + 1] : 'input[type="file"]';
+    // With no --selector, selIdx is -1 and the naive filter would drop arg[0].
+    const paths = selIdx >= 0 ? args.filter((_, i) => i !== selIdx && i !== selIdx + 1) : args;
+    if (!paths.length) {
+      out("usage: upload <path...> [--selector <css>]");
+      process.exit(2);
+    }
+    const browser = await connect();
+    const page = await currentPage(browser);
+    const handle = await page.$(selector);
+    if (!handle) {
+      out(`no element matches ${selector} — pass --selector for the file input`);
+      process.exitCode = 1;
+    } else {
+      await handle.uploadFile(...paths);
+      out(`set ${paths.length} file(s) on ${selector}: ${paths.join(", ")}`);
     }
     browser.disconnect();
     break;
@@ -242,6 +278,7 @@ switch (cmd) {
         "node browser.mjs call <tool> [json] execute a WebMCP tool",
         "node browser.mjs eval <js>          evaluate JS in the page",
 				"node browser.mjs screenshot [path]  save a PNG of the page (--full for full page)",
+				"node browser.mjs upload <path...>     put host files into a file input (CDP side)",
       ].join("\n"),
     );
 }

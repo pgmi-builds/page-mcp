@@ -143,7 +143,10 @@ export class Snapshotter {
   /** Full detail for one ref. */
   describe(ref) {
     const el = this.resolve(ref);
-    if (!el) return `No live element for ref "${ref}" — it was removed or replaced. Take a new snapshot.`;
+    // THROW, do not return: a returned diagnosis is indistinguishable from a
+    // successful result to anything reading the tool output, which makes
+    // failures look like successes to scripts and to the model.
+    if (!el) throw new Error(`No live element for ref "${ref}" — it was removed or replaced. Take a new snapshot.`);
     const r = el.getBoundingClientRect();
     const attrs = [...el.attributes]
       .map((a) => `${a.name}=${JSON.stringify(clip(a.value, 80))}`)

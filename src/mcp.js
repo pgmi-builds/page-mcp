@@ -69,12 +69,92 @@ export function runtimeInfo() {
  * blindly. Returning the message puts the diagnosis where the model can use
  * it.
  */
+/**
+ * Validate input against a tool's own schema before running it.
+ *
+ * Without this a schema is decoration: an app tool declaring `holo: boolean`
+ * happily receives the string "yes", and a toggle written as
+ * `typeof holo === 'boolean' ? holo : !current` silently flips to the OPPOSITE
+ * of what the caller asked for. Type-coercion bugs are the caller's fault, but
+ * silently doing the wrong thing is ours to prevent.
+ *
+ * Deliberately small: type, required, enum, properties, items. Enough to catch
+ * the mistakes that actually happen; not a JSON Schema implementation.
+ */
+function validate(schema, value, path = "") {
+	const errs = [];
+	if (!schema || typeof schema !== "object") return errs;
+	const at = path || "argument";
+
+	if (schema.type === "object") {
+		if (value !== undefined && (typeof value !== "object" || value === null || Array.isArray(value))) {
+			return [`${at}: expected an object`];
+		}
+		const obj = value ?? {};
+		for (const key of schema.required ?? []) {
+			if (obj[key] === undefined) errs.push(`missing required property "${key}"`);
+		}
+		for (const [key, sub] of Object.entries(schema.properties ?? {})) {
+			if (obj[key] === undefined) continue;
+			errs.push(...validate(sub, obj[key], key));
+		}
+		return errs;
+	}
+
+	if (schema.type === "array") {
+		if (!Array.isArray(value)) return [`${at}: expected an array, got ${JSON.stringify(value)}`];
+		if (schema.items) value.forEach((v, i) => errs.push(...validate(schema.items, v, `${at}[${i}]`)));
+		return errs.concat(enumError(schema, value, at));
+	}
+
+	const actual = Array.isArray(value) ? "array" : value === null ? "null" : typeof value;
+	if (schema.type === "boolean" && actual !== "boolean") errs.push(`${at}: expected a boolean, got ${JSON.stringify(value)}`);
+	else if ((schema.type === "number" || schema.type === "integer") && actual !== "number") errs.push(`${at}: expected a number, got ${JSON.stringify(value)}`);
+	else if (schema.type === "string" && actual !== "string") errs.push(`${at}: expected a string, got ${JSON.stringify(value)}`);
+
+	return errs.concat(enumError(schema, value, at));
+}
+
+function enumError(schema, value, at) {
+	if (!Array.isArray(schema.enum)) return [];
+	return schema.enum.includes(value)
+		? []
+		: [`${at}: expected one of ${JSON.stringify(schema.enum)}, got ${JSON.stringify(value)}`];
+}
+
+/**
+ * Run a tool, converting a thrown error into a RETURNED message.
+ *
+ * This matters more than it looks. A tool that throws does not hand the model a
+ * readable failure — the browser rejects `executeTool` with an opaque
+ * DOMException ("Tool was executed but the invocation failed") and the page
+ * also collects an uncaught error. The agent learns nothing and retries
+ * blindly. Returning the message puts the diagnosis where the model can use
+ * it.
+ */
 async function safeRun(def, input, opts) {
+	const args = input ?? {};
+
+	const problems = validate(def.inputSchema, args);
+	if (problems.length) {
+		return `Error from ${def.name}: invalid arguments — ${problems.join("; ")}. Rejected without running.`;
+	}
+
 	try {
-		const r = await def.run(input ?? {}, opts ?? {});
+		const r = await def.run(args, opts ?? {});
 		return typeof r === "string" ? r : JSON.stringify(r);
 	} catch (err) {
 		const msg = err && err.message ? err.message : String(err);
+		// A ReferenceError/TypeError escaping a tool body is a bug in the tool,
+		// not a condition the caller can fix. Say so, so the agent does not sit
+		// there retrying its input.
+		if (err instanceof ReferenceError || err instanceof TypeError) {
+			const site = String(err.stack ?? "").split("\n")[1]?.trim() ?? "";
+			return (
+				`Error from ${def.name}: internal failure — ${msg}. This is a bug in the tool ` +
+				`implementation, not in your arguments; retrying will not help.${site ? `\n  ${site}` : ""}`
+			);
+		}
 		return `Error from ${def.name}: ${msg}`;
 	}
 }

@@ -54,9 +54,26 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
     return el;
   };
 
-  const after = (msg, { includeSnapshot }) => {
+  /**
+   * Let one frame land before outlining the page.
+   *
+   * Snapshotting synchronously after an action reports the DOM as it was
+   * BEFORE the action's own render — an agent that clicked a control and read
+   * the fresh outline would see the old disabled/disabled state and conclude
+   * the click did nothing. One frame is enough for synchronous renderers, and
+   * genuinely async work still needs the wait tool.
+   */
+  const settle = () =>
+    new Promise((resolve) => {
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => setTimeout(resolve, 0));
+      else setTimeout(resolve, 0);
+    });
+
+  const after = async (msg, { includeSnapshot }) => {
     const wantSnapshot = includeSnapshot ?? snapshotAfterAction;
-    return wantSnapshot ? `${msg}\n\nPage now:\n${snapshotText({ maxNodes: 80 })}` : msg;
+    if (!wantSnapshot) return msg;
+    await settle();
+    return `${msg}\n\nPage now (outline taken one frame after the action; async work may still be in flight — use ${name("wait")} to wait on it):\n${snapshotText({ maxNodes: 80 })}`;
   };
 
   const includeSnapshotProp = {
@@ -319,7 +336,9 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         "Wait until a condition holds, then return. Use this instead of re-snapshotting in a loop after an " +
         "action that triggers async work (a load, a save, a transition). Exactly one of selector / text / " +
         "code is required. Returns as soon as the condition is satisfied, or reports the timeout with the " +
-        "current state so you can see what it was still waiting for.",
+        "current state so you can see what it was still waiting for. To wait on APPLICATION state that is " +
+        "not in the DOM, call the app's own tool from the predicate — e.g. code: " +
+        "`JSON.parse(await devWebmcp.invoke('app_state')).ready === true` — rather than polling from outside.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object",
@@ -402,7 +421,11 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
           );
         }
         const msg = await attachFiles(el, files ?? []);
-        return after(msg, { includeSnapshot: include_snapshot });
+        // Default OFF, unlike the other act tools: parsing an uploaded file is
+        // always asynchronous (FileReader, decode, network), so a snapshot taken
+        // here shows pre-upload state and reads as "the upload did nothing".
+        // The useful next step is the wait tool or an app tool, not an outline.
+        return after(msg, { includeSnapshot: include_snapshot ?? false });
       },
     },
   ];
