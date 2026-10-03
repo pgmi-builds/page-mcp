@@ -300,7 +300,7 @@ export function register(def, { signal, trusted = false } = {}) {
             title: def.title,
             description: def.description,
             inputSchema: def.inputSchema ?? { type: "object", properties: {} },
-            // Every tool in this pack is dev tooling. `debugging` (Chrome 156+)
+            // (annotation restoration in this file is what keeps `debugging` visible)
             // Every tool here can return page text (an outline, a console line,
             // an eval result), and every tool is dev tooling. `debugging` lets an
             // end-user agent filter the whole surface out; `untrustedContentHint`
