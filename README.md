@@ -93,11 +93,13 @@ to expose them.
 | `dev_press` | Key or key combination |
 | `dev_select` | Choose an option in a native `<select>` |
 | `dev_hover` | Pointer over an element |
+| `dev_drag` | Pointer drag, ref **or CSS selector** — reaches canvases that have no ref |
 | `dev_scroll` | Scroll by delta or bring a ref into view |
 | `dev_upload` | Attach files (url or base64) to a file input or dropzone |
 | `dev_wait` | Wait for a selector, text or JS predicate |
 | `dev_console` | Console + uncaught errors + unhandled rejections |
 | `dev_network` | fetch / XHR / beacon, **with the call site that made each request** |
+| `dev_storage` | localStorage / sessionStorage / cookie read-write, for setting up or resetting app state |
 | `dev_eval` | JS REPL |
 
 Names are prefixed (`data-prefix`) so they cannot collide with another browser

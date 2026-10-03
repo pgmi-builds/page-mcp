@@ -10,9 +10,10 @@
  * is what changes behaviour.
  */
 import { Snapshotter } from "./snapshot.js";
-import { fillElement, highlight, hover, pressKey, scrollBy, scrollIntoView, selectOption, synthClick, typeInto } from "./act.js";
+import { fillElement, highlight, hover, pressKey, scrollBy, scrollIntoView, selectOption, synthClick, synthDrag, typeInto } from "./act.js";
 import { readLogs, clearLogs } from "./capture.js";
 import { readNetwork, clearNetwork } from "./network.js";
+import { storageOp } from "./storage.js";
 
 const refProp = (desc) => ({ type: "string", description: desc });
 
@@ -262,6 +263,77 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
       },
     },
     {
+      name: name("drag"),
+      title: "Drag",
+      description:
+        "Drag from one point to another: rotate or pan a canvas, move a slider handle, reorder a card, " +
+        "sweep a range. `from` is a ref from the snapshot OR a CSS selector — a canvas is rarely in an " +
+        "accessibility outline, so selector is the normal way to reach one. Give `to` (ref or selector) or " +
+        "`dx`/`dy` in CSS pixels from `from`'s centre. The pointer runs down → interpolated moves → up on one " +
+        "pointerId, which is what inertia and sortable handlers need; a click pair reads to them as a tap. " +
+        "`steps` raises the move count for velocity-based handlers. Events are synthetic, so isTrusted is " +
+        "false — application code sees them, browser-level gestures do not happen. If an app swallows the " +
+        "first interaction (to dismiss an intro, arm a gesture handler), the FIRST drag is a no-op: drag " +
+        "twice before concluding the gesture does nothing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          from: {
+            type: "string",
+            description: "Element ref (e.g. e7) or CSS selector to start on. The drag starts at its centre.",
+          },
+          to: { type: "string", description: "Ref or CSS selector to drop on. Give this, or dx/dy." },
+          dx: { type: "number", description: "Horizontal pixels from `from`'s centre. Give with dy, instead of `to`." },
+          dy: { type: "number", description: "Vertical pixels from `from`'s centre." },
+          steps: { type: "number", description: "Intermediate pointermove events (default 8)." },
+          include_snapshot: includeSnapshotProp,
+        },
+        required: ["from"],
+      },
+      run: async ({ from, to, dx, dy, steps, include_snapshot }) => {
+        const centre = (el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        };
+        // A ref is the common case and is checked first; anything else is a
+        // selector. Canvases, map tiles and other pointer surfaces usually have
+        // no ref at all, which is why the selector path exists.
+        const resolve = (spec, verb) => {
+          const s = String(spec);
+          if (/^e\d+$/.test(s)) return { el: actable(s, need(s), verb), label: `ref ${s}` };
+          const el = document.querySelector(s);
+          if (!el) {
+            throw new Error(
+              `No element matches selector ${JSON.stringify(s)}. Take a snapshot to see what is on the page.`,
+            );
+          }
+          return { el, label: `selector ${JSON.stringify(s)}` };
+        };
+
+        const a = resolve(from, "dragging");
+        const fromPt = centre(a.el);
+        let toPt;
+        let toLabel;
+        if (to !== undefined) {
+          const b = resolve(to, "dropping on");
+          toPt = centre(b.el);
+          toLabel = b.label;
+        } else if (dx !== undefined || dy !== undefined) {
+          toPt = { x: fromPt.x + (dx ?? 0), y: fromPt.y + (dy ?? 0) };
+          toLabel = `(${Math.round(toPt.x)}, ${Math.round(toPt.y)})`;
+        } else {
+          throw new Error(`A drag needs somewhere to go: give "to" (a ref or selector) or "dx"/"dy" in pixels.`);
+        }
+
+        const n = Math.min(Math.max(Number(steps) || 8, 1), 60);
+        await synthDrag(a.el, { from: fromPt, to: toPt, steps: n });
+        return after(
+          `Dragged on ${a.label} from (${Math.round(fromPt.x)}, ${Math.round(fromPt.y)}) to ${toLabel} over ${n} moves.`,
+          { includeSnapshot: include_snapshot },
+        );
+      },
+    },
+    {
       name: name("scroll"),
       title: "Scroll",
       description:
@@ -375,6 +447,35 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         if (clear) clearNetwork();
         return out;
       },
+    },
+    {
+      name: name("storage"),
+      title: "Read and write storage",
+      description:
+        "Read or change this origin's localStorage, sessionStorage and document.cookie. Use it to set up a " +
+        "state the UI depends on (a feature flag, a cached token, a half-finished draft) or to reset to a " +
+        "fresh-user state without clearing the whole profile. Exactly one of get/set/remove needs a key; " +
+        "list is the usual first call. Boundaries: HttpOnly cookies are invisible to document.cookie (read " +
+        "those from CDP), IndexedDB is listed only by name, and values are strings — JSON.stringify " +
+        "structured data before setting it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          area: {
+            type: "string",
+            enum: ["local", "session", "cookie"],
+            description: "Which store (default local).",
+          },
+          action: {
+            type: "string",
+            enum: ["list", "get", "set", "remove", "clear"],
+            description: "What to do (default list).",
+          },
+          key: { type: "string", description: "The storage key / cookie name. Required by get, set and remove." },
+          value: { type: "string", description: "The value to store. Required by set." },
+        },
+      },
+      run: ({ area, action, key, value }) => storageOp({ area, action, key, value }),
     },
     {
       name: name("wait"),

@@ -37,7 +37,58 @@ export function synthClick(el) {
   el.dispatchEvent(new MouseEvent("mousedown", { ...init, buttons: 1 }));
   el.dispatchEvent(new Pointer("pointerup", { ...init, buttons: 0 }));
   el.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0 }));
-  el.click();
+}
+
+/**
+ * A drag is not a click with extra steps. Handlers track pointerdown, then a
+ * stream of moves on the SAME pointerId, then pointerup — and they care that
+ * the moves arrive as a sequence with real time between them. Two events (down,
+ * up) reads to an inertia or sortable handler as a tap, which is why this
+ * interpolates `steps` moves with a frame-ish delay between them.
+ *
+ * Moves go to whatever is under the cursor at each point, like a real pointer
+ * does, so a drag across siblings is visible to each of them.
+ *
+ * `isTrusted` is false by construction. Application code does not care
+ * (OrbitControls, sortable lists, sliders all listen for the events), but no
+ * browser-level gesture happens: nothing here can open a context menu or drag
+ * a file into the OS. See docs/08 §1.4 for the split.
+ */
+export async function synthDrag(el, { from, to, steps = 8, delayMs = 16 } = {}) {
+  const Pointer = typeof PointerEvent !== "undefined" ? PointerEvent : MouseEvent;
+  const base = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    button: 0,
+    pointerId: 1,
+    isPrimary: true,
+    pointerType: "mouse",
+  };
+  const dispatch = (type, point, buttons, Ctor) => {
+    // Like a real pointer: the event goes to whatever is under the cursor now,
+    // which is how a drag across siblings reaches each of them.
+    const target = document.elementFromPoint(point.x, point.y) ?? el;
+    target.dispatchEvent(new Ctor(type, { ...base, clientX: point.x, clientY: point.y, buttons }));
+  };
+
+  dispatch("pointerover", from, 0, Pointer);
+  dispatch("mouseover", from, 0, MouseEvent);
+  dispatch("pointerdown", from, 1, Pointer);
+  dispatch("mousedown", from, 1, MouseEvent);
+
+  for (let i = 1; i <= steps; i++) {
+    const point = {
+      x: from.x + ((to.x - from.x) * i) / steps,
+      y: from.y + ((to.y - from.y) * i) / steps,
+    };
+    dispatch("pointermove", point, 1, Pointer);
+    dispatch("mousemove", point, 1, MouseEvent);
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+
+  dispatch("pointerup", to, 0, Pointer);
+  dispatch("mouseup", to, 0, MouseEvent);
 }
 
 export function hover(el) {

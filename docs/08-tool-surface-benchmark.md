@@ -171,7 +171,9 @@
 | P0 | 确定 polyfill 策略 | ✅ **留在 5.1.0**；`getTools()` 出口还原注解，原生与 polyfill 都生效 |
 | P0 | vendor `dom-accessibility-api` 修 `accessibleName` | ✅ 修好两个影响默认快照的错误；构建改为 minify，库的成本被抵消 |
 | P0 | 应用工具描述与结果加 UNTRUSTED 围栏 | ⬜ |
-| P1 | `dev_find`（搜索 + 上下文）· `dev_storage` · `dev_drag` · 批量 `dev_fill` · `dev_select` 列选项 | ⬜ |
+| P0 | UNTRUSTED 围栏 | ✅ 应用工具描述自动加 `[UNTRUSTED: …]`；全部工具带 `untrustedContentHint` |
+| P1 | `dev_storage` · `dev_drag` | ✅ drag 的 `from`/`to` 同时接受 ref 或 CSS 选择器（canvas 不在 a11y 大纲里） |
+| P1 | `dev_find`（搜索 + 上下文）· 批量 `dev_fill` · `dev_select` 列选项 | ⬜ |
 | P1 | `dev_box`（给 CDP 裁剪用）· `dev_geometry_audit`（不用像素就能证明的视觉 bug） | ⬜ |
 | P2 | `dev_perf`（web-vitals）· `dev_observe`/`dev_diff`（增量而非重拍）· `dev_assert` | ⬜ |
 | P2 | `dev_a11y`（axe-core 思路，自研而非引入 MPL 代码） | ⬜ |

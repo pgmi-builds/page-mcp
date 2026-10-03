@@ -46,7 +46,10 @@ function boot() {
   };
 
   // 3. Register the surface.
-  const disposers = buildTools(cfg).map((tool) => register(tool));
+  // `trusted` only skips the UNTRUSTED description fence. It does not make the
+  // tool trusted in any real sense — the annotations still say
+  // untrustedContentHint, because every output here is page text.
+  const disposers = buildTools(cfg).map((tool) => register(tool, { trusted: true }));
 
   // 4. Page-facing handle. Two jobs:
   //    - let the host app register its OWN domain tools (the thing no external

@@ -189,6 +189,51 @@ async function run({ label, native }) {
       console.log(`NOTE  ${label}: no same-origin script fixture — readable-initiator case skipped`);
     }
 
+    // ---- 8b. UNTRUSTED fencing -------------------------------------------
+    // The page is the untrusted party, so an app tool's description is fenced
+    // before it reaches a consuming agent, and every tool declares
+    // untrustedContentHint because every output here is page text.
+    const fenced = await page.evaluate(async () => {
+      const tools = await document.modelContext.getTools();
+      const app = tools.find((t) => t.name === "vitrine_state");
+      const own = tools.find((t) => t.name === "dev_snapshot");
+      return {
+        appFenced: app.description.startsWith("[UNTRUSTED:"),
+        ownUnfenced: !own.description.startsWith("[UNTRUSTED:"),
+        allFlagged: tools.every((t) => t.annotations?.untrustedContentHint === true),
+      };
+    });
+    record(
+      `${label}: app tool descriptions are fenced as untrusted`,
+      fenced.appFenced && fenced.ownUnfenced && fenced.allFlagged,
+      JSON.stringify(fenced),
+    );
+
+    // ---- 8c. storage -------------------------------------------------------
+    const storage = await call("dev_storage", { action: "set", key: "dev_webmcp_probe", value: "{\"n\":1}" });
+    const got = await call("dev_storage", { action: "get", key: "dev_webmcp_probe" });
+    const listed = await call("dev_storage", { action: "list" });
+    const cleaned = await call("dev_storage", { action: "remove", key: "dev_webmcp_probe" });
+    record(
+      `${label}: storage round-trips a value the UI never touched`,
+      /overwrote|created/.test(storage) && got === "{\"n\":1}" && /dev_webmcp_probe/.test(listed) && /removed/.test(cleaned),
+      `get -> ${got}`,
+    );
+
+    // ---- 8d. drag ----------------------------------------------------------
+    // The app gates its orbit controls until the first pointerdown (the intro
+    // swallow), so the first drag is a no-op by the app's own design. Drag
+    // twice and require the camera to have moved by the end.
+    const posBefore = await call("vitrine_state");
+    await call("dev_drag", { from: "canvas", dx: 120, dy: 0, steps: 8 });
+    await call("dev_drag", { from: "canvas", dx: -180, dy: 30, steps: 8 });
+    const posAfter = await call("vitrine_state");
+    record(
+      `${label}: drag drives the canvas gesture (camera moved)`,
+      posBefore !== posAfter && /"camera"/.test(posAfter),
+      `camera ${JSON.parse(posAfter).camera.position.map((n) => +n.toFixed(2)).join(", ")}`,
+    );
+
     // ---- 10. installing twice must not half-register ----------------------
     // Duplicate tool names are rejected by the browser, and a rejected mirror
     // is not fatal to the local registry — so a second copy used to look like
