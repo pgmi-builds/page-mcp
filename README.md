@@ -103,6 +103,9 @@ to expose them.
 | `dev_console` | Console + uncaught errors + unhandled rejections |
 | `dev_network` | fetch / XHR / beacon, **with the call site that made each request** |
 | `dev_storage` | localStorage / sessionStorage / cookie read-write, for setting up or resetting app state |
+| `dev_changes` | Ordered DOM delta since a token — what your action actually did |
+| `dev_perf` | Long tasks / LCP / CLS / heap + a **live** frame sample |
+| `dev_assert` | Check several facts in one call; a failure is a real failure |
 | `dev_eval` | JS REPL |
 
 Names are prefixed (`data-prefix`) so they cannot collide with another browser

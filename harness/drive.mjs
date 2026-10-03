@@ -289,6 +289,34 @@ async function run({ label, native }) {
       audit.split("\n").slice(0, 4).join("\n"),
     );
 
+    // ---- 8h. the badge must follow the registry ----------------------------
+    // Nothing else on the page watches for late app registrations; the badge is
+    // the visible one. If emit() ever stops firing, the count goes stale and
+    // the page quietly lies about what it exposes — which is how this shipped
+    // once: a refactor dropped the emit call, every test stayed green, and the
+    // badge froze at the pack's own count.
+    const badgeText = () =>
+      page.evaluate(() =>
+        document.querySelector('[data-dev-webmcp="badge"]')?.shadowRoot?.querySelector(".dot span")?.textContent ?? "",
+    );
+    const badgeBefore = await badgeText();
+    await page.evaluate(() => globalThis.devWebmcp.register({ name: "app.probe_badge", run: () => "x" }));
+    await new Promise((r) => setTimeout(r, 250));
+    const badgeAfter = await badgeText();
+    record(
+      `${label}: the badge repaints when an app tool registers late`,
+      // The split reads "pack + app"; one more registration moves the total by one
+      // whichever side of the "+" it lands on.
+      (() => {
+        const total = (s) => {
+          const m = s.match(/(\d+)(?:\s*\+\s*(\d+))? tools/);
+          return m ? Number(m[1]) + Number(m[2] ?? 0) : NaN;
+        };
+        return total(badgeAfter) === total(badgeBefore) + 1;
+      })(),
+      `${badgeBefore} -> ${badgeAfter}`,
+    );
+
     // ---- 8g. changes / assert / perf ---------------------------------------
     // changes: token before, mutate, delta after — the record must be there and
     // the token must move.

@@ -288,6 +288,7 @@ export function register(def, { signal, trusted = false } = {}) {
     : `${UNTRUSTED_FENCE}${def.description ? " " + def.description : ""}`;
   def = { ...def, description };
   local.set(def.name, def);
+  emit();
 
   const c = ctx();
   if (c) {

@@ -176,8 +176,9 @@
 | P1 | 批量 `dev_fill` · `dev_select` 列选项 | ✅ fill 支持 `fields:[{ref,value}]`，中途失败会报告填到第几个；select 省略 value 即列出选项（含选中/禁用标记） |
 | P1 | `dev_find`（搜索 + 上下文） | ✅ 交互元素优先于纯文本命中（文档序排序曾把这承诺废掉，已修）；容器名不再遮蔽内部元素 |
 | P1 | `dev_box` · `dev_geometry_audit` | ✅ box 的 hitTestable/coveredBy 遵循 06 §4.1 的规则（本 demo 的 disabled 按钮就是反例）；audit 报告 tag#id 而非 aria-label，测试断言曾假设错了这一点 |
-| P2 | `dev_perf`（web-vitals）· `dev_observe`/`dev_diff`（增量而非重拍）· `dev_assert` | ⬜ |
-| P2 | `dev_a11y`（axe-core 思路，自研而非引入 MPL 代码） | ⬜ |
+| P2 | `dev_changes`（原 dev_observe/dev_diff，做成 token 环形缓冲，省掉起停语义）· `dev_perf`（自研 PerformanceObserver，未引 web-vitals——LCP/CLS 直接可取，引库无增量）· `dev_assert` | ✅ `drive` 48/48，24 工具（22+2） |
+| 不采纳 | web-vitals / @medv/finder / tabbable / turndown / text-field-edit | 调研列为可 vendor，但当前没有工具需要它们——为一个未来功能背 20+ KB 不是「采用」，是囤货。等有工具用到再进 |
+| 放弃 | `dev_a11y`（axe-core 思路） | **MPL-2.0**，自研全量规则不现实；`dev_geometry_audit` 覆盖了几何类，对比度/语义类留给宿主 Lighthouse |
 
 ---
 
