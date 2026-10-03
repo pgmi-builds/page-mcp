@@ -189,6 +189,42 @@ async function run({ label, native }) {
       console.log(`NOTE  ${label}: no same-origin script fixture — readable-initiator case skipped`);
     }
 
+    // ---- 10. installing twice must not half-register ----------------------
+    // Duplicate tool names are rejected by the browser, and a rejected mirror
+    // is not fatal to the local registry — so a second copy used to look like
+    // "some tools work". It is now refused outright, with a warning.
+    const beforeDup = (await page.evaluate(async () => (await document.modelContext.getTools()).length));
+    await page.evaluate(() => {
+      const s = document.createElement("script");
+      s.src = "/dist/devtools.js";
+      document.head.appendChild(s);
+    });
+    await new Promise((r) => setTimeout(r, 1200));
+    const afterDup = await page.evaluate(async () => (await document.modelContext.getTools()).length);
+    const warnedDup = await call("dev_console", { tail: 20 });
+    record(
+      `${label}: a second copy of the bundle is refused, not half-registered`,
+      afterDup === beforeDup && /already has dev-webmcp installed/.test(warnedDup),
+      `tools ${beforeDup} -> ${afterDup}; warning ${
+        /already has dev-webmcp installed/.test(warnedDup) ? "seen" : "MISSING"
+      }`,
+    );
+
+    // ---- 11. tool names are validated before the browser sees them ---------
+    const badName = await page.evaluate(() => {
+      try {
+        globalThis.devWebmcp.register({ name: "Dev Snapshot", run: () => "x" });
+        return "ACCEPTED";
+      } catch (e) {
+        return e.message;
+      }
+    });
+    record(
+      `${label}: an illegal tool name is refused with the constraint spelled out`,
+      /^Illegal tool name/.test(badName) && /A-Za-z0-9_/.test(badName),
+      badName.split("\n")[0],
+    );
+
     return { info, names };
   } finally {
     await browser.close();

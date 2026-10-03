@@ -211,6 +211,14 @@ async function safeRun(def, input, opts) {
  */
 export function register(def, { signal } = {}) {
   boot();
+  // The browser enforces this constraint; a name that fails it would be refused
+  // at registration time, so refuse it here with a message that says why.
+  if (!/^[A-Za-z0-9_.-]{1,128}$/.test(String(def?.name ?? ""))) {
+    throw new Error(
+      `Illegal tool name ${JSON.stringify(def?.name)} — WebMCP requires ` +
+        `^[A-Za-z0-9_.-]{1,128}$ (letters, digits, "_", ".", "-"). Rejected without registering.`,
+    );
+  }
   local.set(def.name, def);
   emit();
 
@@ -231,8 +239,13 @@ export function register(def, { signal } = {}) {
           },
           signal ? { signal } : undefined,
         ),
-      ).catch(() => {
-        /* a rejected mirror must not break the local registry */
+      ).catch((e) => {
+        // A rejected mirror must not break the local registry, but swallowing
+        // it silently hides the one case that actually happens: this script
+        // loaded twice, so every name after the first collides.
+        console.warn(
+          `[dev-webmcp] the page refused to register tool "${def.name}": ${e?.message ?? e}`,
+        );
       });
     } catch {
       /* same */
