@@ -42,8 +42,15 @@
     （官方文档：`debugging` 从 Chrome 156 起可用，**就是为 dev tooling 设计的**，
     让面向终端用户的 agent 能把这些工具过滤掉）。
 - **SecureContext**：`http://localhost` / `http://127.0.0.1` 算 potentially trustworthy，
-  本地开发 OK；**但 `http://192.168.x.x` 这种局域网 IP 不算**——这会挡掉真机调试场景，要记一笔。
+  本地开发 OK。**关键：HTTPS 公开站点同样是 secure context**，所以公开网站跑 WebMCP 完全没问题
+  （实测 `https://webmcp.sh/` 就是公开 WebMCP 站点：加载 polyfill + relay embed + `<webmcp-agent>`）。
+  唯一边界是**明文 HTTP 且非 localhost**（如 `http://192.168.1.5:3000`）——窄场景，别说过头。
 - **用户确认不由规范强制**：`consequentialHint` 只是"信号"。`Permissions-Policy: tools=()` 是官方推荐关停开关。
+- **Declarative API（另一半，零 JS 集成）**：普通 `<form>` 加 `toolname` / `tooldescription` /
+  `toolparamdescription` / `toolautosubmit`，浏览器自动转成带 JSON Schema 的 WebMCP 工具；
+  配套 `:tool-form-active` / `:tool-submit-active` 焦点样式、`SubmitEvent.agentInvoked`、
+  `respondWith()`、`toolactivated` / `toolcancel` 事件。
+  → 这条我们可以直接复用：脚本可以读取/暴露声明式工具，用户一行 JS 都不用写。
 
 ---
 
@@ -81,13 +88,21 @@
 另一条路是 CDP 原生的 `WebMCP.*` domain（chrome-devtools-mcp 已封装成
 `list_webmcp_tools` / `execute_webmcp_tool`，需 `--categoryExperimentalWebmcp=true`）。
 
-**两个必须说清的细节**：
+**用词澄清（Chrome 官方口径）**：WebMCP 是 "a set of **MCP-inspired** APIs, rather than a direct
+JavaScript implementation of MCP"——它不说 MCP 的 JSON-RPC 线协议，浏览器用 internal systems 直接承载
+并执行工具（"The browser acts as the communicator between your website and the agent"）。
+**对我们的场景这个区别不重要**：agent 驱动浏览器时，浏览器本身就是那个 tool host / server。
+只有一种情况需要翻译层——agent 是个**只讲 JSON-RPC、自己不驱动浏览器**的纯 MCP client。
 
-1. WebMCP **不会自己变成 MCP server**。得到的是两种形态：
-   - (a) agent 用 `evaluate_script` 自己调 `getTools()`/`executeTool()` → **今天、stable Chrome、零配置**可用，
-     但工具不是 agent 工具列表里的一等公民（要靠 skill/prompt 告诉它去调）；
-   - (b) 一个薄 MCP server 把 CDP → WebMCP 暴露成正式 MCP 工具 → 体验最好，
-     chrome-devtools-mcp 与 [PaulKinlan/webmcp-relay](https://github.com/PaulKinlan/webmcp-relay) 已经做了。
+两种到达方式：
+- (a) agent 用 `evaluate_script` 自己调 `getTools()` / `executeTool()` → **今天、stable Chrome、零配置**；
+  代价是工具不是 agent 工具列表里的一等公民（要靠 skill/prompt 告诉它去调）。
+- (b) 一个薄 MCP server 把 CDP → WebMCP 暴露成正式 MCP 工具 → 体验最好，
+  chrome-devtools-mcp 与 [PaulKinlan/webmcp-relay](https://github.com/PaulKinlan/webmcp-relay) 已经做了。
+
+**不要依赖 Chrome 原生 WebMCP**：原生在 flag / origin trial 后面，且官方文档说 headless
+**不是它的主要设计目标**。→ **页面侧一律走 polyfill**，对 `document.modelContext` 编程即可，
+这样版本无关、headless 可用、非 Chrome 也能跑；原生存在时 polyfill 自动让位。
 2. **不要依赖 Chrome 原生 WebMCP**：原生在 flag / origin trial 后面，且官方文档说 headless
    **不是它的主要设计目标**。→ **页面侧一律走 polyfill**，对 `document.modelContext` 编程即可，
    这样版本无关、headless 可用、非 Chrome 也能跑；原生存在时 polyfill 自动让位。
