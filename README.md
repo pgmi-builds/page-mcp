@@ -1,7 +1,166 @@
 # dev-webmcp
 
-Experimental line: a CDN-delivered, headless **WebMCP tool provider**.
-Drop one `<script src="...">` into a web UI and it registers tools that let an
-external coding agent inspect the DOM / run JS and drive the UI (click, type…).
+A CDN-delivered, headless **WebMCP tool provider**.
 
-Status: research / design.
+Drop one `<script>` into a web UI and that page's own JS engine starts hosting a
+set of devtools tools on `document.modelContext`:
+
+- **DOM inspection** — a text outline of the page with stable element refs
+- **Interactions** — click, fill, type, press, select, hover, scroll, upload
+- **Diagnostics** — console/error capture, and a JS REPL
+
+Any agent that can reach the page can discover and call them. There is no
+server, no LLM and no chat UI in here — this is the tool surface, not an agent.
+
+```html
+<script src="https://cdn.example/dev-webmcp.js"></script>
+```
+
+---
+
+## How it is consumed
+
+The premise is that the **coding agent owns the browser**: it launches Chrome
+(headless or not), points it at the app it is working on, and drives it over
+CDP. Under that premise the agent needs no bridge — the WebMCP tools are
+reachable through the channel it already has.
+
+```
+   coding agent (Claude Code / Cursor / DSH / …)
+              │
+              │  the browser channel it already has
+              │  · CDP Runtime.evaluate
+              │  · chrome-devtools-mcp (list_webmcp_tools / execute_webmcp_tool)
+              │  · Playwright / Puppeteer
+              ▼
+      Chrome  ──  page + <script src="…/dev-webmcp.js">
+                        │
+                        ▼
+              document.modelContext
+              ├── dev_snapshot, dev_click, dev_fill, …
+              └── <tools the app registers itself>
+```
+
+Two details worth stating precisely:
+
+1. **CDP `Runtime.evaluate` runs in the page's own realm**, so the `tools`
+   Permissions-Policy default allowlist (`'self'`) is satisfied — page JS can
+   call `getTools()` / `executeTool()`, and so can an agent evaluating in that
+   realm.
+2. **Do not depend on Chrome's native WebMCP.** It sits behind a flag / origin
+   trial. The bundle carries the polyfill and installs it only when
+   `document.modelContext` is absent, so the same file works on stable Chrome
+   with no flag, in headless, and in Firefox/Safari.
+
+A relay or extension is only needed when the agent does **not** own the browser
+— i.e. the tools live in the developer's own everyday Chrome. That is a
+secondary case; `@mcp-b/webmcp-local-relay` covers it.
+
+---
+
+## The app's own tools
+
+The highest-value half. A page can register tools that expose its own domain
+state, which no external agent can infer from the DOM:
+
+```js
+window.devWebmcp.register({
+  name: "vitrine_state",
+  description: "Read the live state of the 3D viewer…",
+  annotations: { readOnlyHint: true },
+  inputSchema: { type: "object", properties: {} },
+  run: () => JSON.stringify({ /* … */ }),
+});
+```
+
+This matters most where the DOM is empty. In the bundled demo the app renders
+into a WebGL canvas: a snapshot shows three buttons, while `vitrine_state`
+reports the scene graph, renderer stats and materialize progress. Module-scoped
+bindings are unreachable from `eval`, so registering a tool is the *only* way
+to expose them.
+
+---
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `dev_snapshot` | Text outline of the page; stable refs; `include_hidden` |
+| `dev_read` | Text, attrs, computed style, CSS path for one ref |
+| `dev_click` | Real pointer/mouse sequence, then native click |
+| `dev_fill` | Set a field's value (React/Vue-aware) |
+| `dev_type` | Per-keystroke typing for autocomplete-style inputs |
+| `dev_press` | Key or key combination |
+| `dev_select` | Choose an option in a native `<select>` |
+| `dev_hover` | Pointer over an element |
+| `dev_scroll` | Scroll by delta or bring a ref into view |
+| `dev_upload` | Attach files (url or base64) to a file input or dropzone |
+| `dev_wait` | Wait for a selector, text or JS predicate |
+| `dev_console` | Console + uncaught errors + unhandled rejections |
+| `dev_eval` | JS REPL |
+
+Names are prefixed (`data-prefix`) so they cannot collide with another browser
+tool set in the same agent context. Every tool carries `debugging: true`, which
+a consuming agent can use to filter dev tooling out of an end-user surface.
+
+---
+
+## Boundaries and known limits
+
+- **`style-src` without `'unsafe-inline'`** kills inline styles. Measured on
+  Chrome 151: `<style>` in a shadow root is blocked, `el.style.x = …` is
+  blocked and a violation is logged, but `CSSStyleSheet` +
+  `adoptedStyleSheets` works. The page indicator and the click highlight use
+  the latter.
+- **`script-src` without `'unsafe-eval'`** kills `dev_eval`. It fails with a
+  readable message rather than a crash; the CSP-safe path is to have the app
+  register named tools. `dev_snapshot` and the act tools are unaffected.
+- **Some tools cannot exist in the page.** `dev_upload` takes a URL or base64
+  because the page cannot read a path on the developer's disk. Uploading a host
+  path is a job for the agent's CDP layer (`DOM.setFileInputFiles`); screenshots
+  are likewise a CDP-side concern (`canvas.toDataURL` only works when the app
+  preserved the drawing buffer).
+- **`debugging` is dropped on Chrome 151** — both native and polyfilled
+  `getTools()` returned only `readOnlyHint` / `untrustedContentHint`. The
+  annotation is documented as available from Chrome 156.
+- **Secure context required.** `document.modelContext` is `[SecureContext]`.
+  `https://` and `localhost` / `127.0.0.1` qualify; plain-HTTP on a LAN IP does
+  not.
+- **Dev-only by construction.** `dev_eval` is arbitrary JS execution in the
+  user's session. The page-corner indicator says so and the script tag can be
+  omitted from production builds.
+
+---
+
+## Development
+
+```bash
+npm install
+npm run build          # dist/devtools.js — single-file IIFE, polyfill included
+node harness/make-demo.mjs   # regenerate demo/index.html from the three.js app
+npm run serve          # http://127.0.0.1:8940/demo/
+npm run drive          # end-to-end suite, native + polyfill runtimes
+```
+
+`harness/browser.mjs` is the browser tool an agent owns — a CDP attach client,
+deliberately *not* a bridge to this package:
+
+```bash
+node harness/browser.mjs start http://127.0.0.1:8940/demo/
+node harness/browser.mjs tools
+node harness/browser.mjs call dev_snapshot
+node harness/browser.mjs screenshot /tmp/shot.png
+```
+
+### Verified
+
+- 20/20 end-to-end assertions pass in both runtimes (native flag, and polyfill
+  with no flag): discovery via `getTools()`, `executeTool()` round trips,
+  snapshot of a canvas page, disabled-control diagnosis, app-tool read and
+  mutation, console capture, eval.
+- The published demo works over public HTTPS with the polyfill
+  (<https://view.pc.randomhash.app/2026-10-03_webmcp-devtools-demo/>).
+- Styling survives a response-header CSP of
+  `default-src 'self'; script-src 'self'; style-src 'self'` with 0 violations.
+
+Backing research and the positioning argument: [`docs/00-prior-art-and-positioning.md`](docs/00-prior-art-and-positioning.md).
