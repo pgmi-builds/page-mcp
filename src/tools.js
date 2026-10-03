@@ -162,15 +162,59 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         properties: {
           ref: refProp("Element ref from the snapshot."),
           value: { type: "string", description: "The text to set." },
+          fields: {
+            type: "array",
+            description:
+              "Fill several fields in one call instead of one round trip each. Each item is {ref, value}. " +
+              "Fields are filled in order; if one fails, the ones before it stay filled and the error says " +
+              "how far it got.",
+            items: {
+              type: "object",
+              properties: {
+                ref: refProp("Element ref from the snapshot."),
+                value: { type: "string", description: "The text to set." },
+              },
+              required: ["ref", "value"],
+            },
+          },
           include_snapshot: includeSnapshotProp,
         },
-        required: ["ref", "value"],
+        // No `required` here on purpose: a call carries either ref+value or
+        // fields[], and run() produces the error that says which was missing.
       },
-      run: ({ ref, value, include_snapshot }) => {
-        const el = actable(String(ref), need(String(ref)), "filling");
-        scrollIntoView(el);
-        highlight(el);
-        fillElement(el, String(value ?? ""));
+      run: ({ ref, value, fields, include_snapshot }) => {
+        const one = (r, v) => {
+          const el = actable(String(r), need(String(r)), "filling");
+          scrollIntoView(el);
+          highlight(el);
+          fillElement(el, String(v ?? ""));
+          return `  ${r} = ${JSON.stringify(String(v ?? ""))}`;
+        };
+
+        if (Array.isArray(fields) && fields.length) {
+          const done = [];
+          try {
+            for (const f of fields) done.push(one(f.ref, f.value));
+          } catch (e) {
+            // Stopping at the first failure is right — the model has to know the
+            // form is half-filled — but a bare error invites a retry that
+            // re-fills everything from the start.
+            throw new Error(
+              `Filled ${done.length} of ${fields.length} field(s) before failing. Filled so far:\n` +
+                `${done.join("\n")}\n\nThen: ${e.message}`,
+            );
+          }
+          return after(`Filled ${fields.length} field(s):\n${done.join("\n")}`, {
+            includeSnapshot: include_snapshot,
+          });
+        }
+
+        if (ref === undefined || value === undefined) {
+          throw new Error(
+            `Give "ref" and "value" for one field, or "fields": [{ref, value}, ...] to fill several at once.`,
+          );
+        }
+        one(ref, value);
         return after(`Filled ${ref} with ${JSON.stringify(String(value ?? ""))}.`, {
           includeSnapshot: include_snapshot,
         });
@@ -225,22 +269,46 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
       name: name("select"),
       title: "Select option",
       description:
-        "Choose an option in a native <select> by its value, visible label or text. Only works for real " +
-        "<select> elements — for custom dropdowns, click the trigger then click the option ref.",
+        "Choose an option in a native <select> by its value, visible label or text. Omit `value` to list the " +
+        "options first — cheaper than guessing and failing, and the failure lists them anyway. Only works " +
+        "for real <select> elements; for custom dropdowns, click the trigger then click the option ref.",
       inputSchema: {
         type: "object",
         properties: {
           ref: refProp("Element ref of the <select>."),
-          value: { type: "string", description: "Option value, label or text to choose." },
+          value: {
+            type: "string",
+            description: "Option value, label or text. Omit to list the options instead of choosing one.",
+          },
           include_snapshot: includeSnapshotProp,
         },
-        required: ["ref", "value"],
+        required: ["ref"],
       },
       run: ({ ref, value, include_snapshot }) => {
         const el = need(String(ref));
+        if (!(el instanceof HTMLSelectElement)) {
+          throw new Error(
+            `Ref ${ref} is not a <select> (it is a ${el.tagName.toLowerCase()}). For a custom dropdown, click ` +
+              `the trigger and then click the option that appears.`,
+          );
+        }
         highlight(el);
-        selectOption(el, String(value ?? ""));
-        return after(`Selected ${JSON.stringify(String(value ?? ""))} in ${ref}.`, {
+
+        if (value === undefined) {
+          const rows = [...el.options].map(
+            (o) =>
+              `  ${o.selected ? "*" : " "} value=${JSON.stringify(o.value)} label=${JSON.stringify(
+                (o.label || o.textContent || "").trim(),
+              )}${o.disabled ? " disabled" : ""}`,
+          );
+          return (
+            `<select> at ${ref}: ${el.options.length} option(s), currently ${JSON.stringify(el.value)}\n` +
+            `${rows.join("\n")}\nPass one of these as "value" — a value or a label both match.`
+          );
+        }
+
+        selectOption(el, String(value));
+        return after(`Selected ${JSON.stringify(String(value))} in ${ref}.`, {
           includeSnapshot: include_snapshot,
         });
       },

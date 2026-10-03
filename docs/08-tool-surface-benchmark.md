@@ -173,7 +173,8 @@
 | P0 | 应用工具描述与结果加 UNTRUSTED 围栏 | ⬜ |
 | P0 | UNTRUSTED 围栏 | ✅ 应用工具描述自动加 `[UNTRUSTED: …]`；全部工具带 `untrustedContentHint` |
 | P1 | `dev_storage` · `dev_drag` | ✅ drag 的 `from`/`to` 同时接受 ref 或 CSS 选择器（canvas 不在 a11y 大纲里） |
-| P1 | `dev_find`（搜索 + 上下文）· 批量 `dev_fill` · `dev_select` 列选项 | ⬜ |
+| P1 | 批量 `dev_fill` · `dev_select` 列选项 | ✅ fill 支持 `fields:[{ref,value}]`，中途失败会报告填到第几个；select 省略 value 即列出选项（含选中/禁用标记） |
+| P1 | `dev_find`（搜索 + 上下文） | ⬜ |
 | P1 | `dev_box`（给 CDP 裁剪用）· `dev_geometry_audit`（不用像素就能证明的视觉 bug） | ⬜ |
 | P2 | `dev_perf`（web-vitals）· `dev_observe`/`dev_diff`（增量而非重拍）· `dev_assert` | ⬜ |
 | P2 | `dev_a11y`（axe-core 思路，自研而非引入 MPL 代码） | ⬜ |

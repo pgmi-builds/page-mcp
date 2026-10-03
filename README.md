@@ -88,10 +88,10 @@ to expose them.
 | `dev_snapshot` | Text outline of the page; stable refs; `include_hidden` |
 | `dev_read` | Text, attrs, computed style, CSS path for one ref |
 | `dev_click` | Real pointer/mouse sequence, then native click |
-| `dev_fill` | Set a field's value (React/Vue-aware) |
+| `dev_fill` | Set one field's value, or a whole form in one call (React/Vue-aware) |
 | `dev_type` | Per-keystroke typing for autocomplete-style inputs |
 | `dev_press` | Key or key combination |
-| `dev_select` | Choose an option in a native `<select>` |
+| `dev_select` | Choose an option in a native `<select>`, or list the options first |
 | `dev_hover` | Pointer over an element |
 | `dev_drag` | Pointer drag, ref **or CSS selector** — reaches canvases that have no ref |
 | `dev_scroll` | Scroll by delta or bring a ref into view |
