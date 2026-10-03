@@ -177,10 +177,30 @@ switch (cmd) {
         input,
       );
       out(result);
+      // Tools report failure as a RETURNED message (a throw would surface as an
+      // opaque DOMException and tell the caller nothing), so the exit code has
+      // to be derived from the text — otherwise a hard failure looks like success
+      // to anything scripting this.
+      if (typeof result === "string" && /^Error from |^Error: /.test(result)) process.exitCode = 1;
     } catch (e) {
       out(`call failed: ${e.message}`);
       process.exitCode = 1;
     }
+    browser.disconnect();
+    break;
+  }
+
+  case "screenshot": {
+    // Screenshots belong on THIS side of the boundary, not in the page: an
+    // in-page tool can only reach pixels it can already draw (canvas.toDataURL),
+    // and only when the app preserved the drawing buffer.
+    const browser = await connect();
+    const page = await currentPage(browser);
+    const path = args[0] ?? "/tmp/dev-webmcp-shot.png";
+    const buf = await page.screenshot({ fullPage: args.includes("--full") });
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path, buf);
+    out(`wrote ${path} (${buf.length} bytes)`);
     browser.disconnect();
     break;
   }
@@ -221,6 +241,7 @@ switch (cmd) {
         "node browser.mjs tools              list the page's WebMCP tools",
         "node browser.mjs call <tool> [json] execute a WebMCP tool",
         "node browser.mjs eval <js>          evaluate JS in the page",
+				"node browser.mjs screenshot [path]  save a PNG of the page (--full for full page)",
       ].join("\n"),
     );
 }

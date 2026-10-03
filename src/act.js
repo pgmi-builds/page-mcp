@@ -14,6 +14,8 @@
  *     -> both `input` and `change` are dispatched.
  */
 
+import { adopt } from "./style.js";
+
 /** Full pointer/mouse sequence, then the native click for activation behavior. */
 export function synthClick(el) {
   const rect = el.getBoundingClientRect();
@@ -131,37 +133,78 @@ export function scrollIntoView(el) {
  * the agent just touched. Purely visual; lives in a top-layer overlay so page
  * CSS cannot hide it.
  */
-let overlay = null;
+/**
+ * Flash a box over the element so a human watching the browser can see what the
+ * agent just touched.
+ *
+ * Geometry changes per call, and inline styles are blocked on any page with a
+ * strict style-src — so the boxes are positioned by rewriting a constructable
+ * stylesheet (one class per live box) and faded with the Web Animations API,
+ * neither of which CSP governs.
+ */
+let overlayHost = null;
+let overlayRoot = null;
+let geomSheet = null;
+const live = new Map();
+let boxSeq = 0;
+
+function ensureOverlay() {
+	if (overlayHost) return;
+	// The host element itself needs positioning, and it lives in the document
+	// tree, so its rule goes on the document's adopted sheets.
+	adopt(document, '[data-dev-webmcp="highlight"]{position:fixed;inset:0;pointer-events:none;z-index:2147483647}');
+	overlayHost = document.createElement("div");
+	overlayHost.setAttribute("data-dev-webmcp", "highlight");
+	overlayRoot = overlayHost.attachShadow({ mode: "open" });
+	adopt(overlayRoot, ".box{position:fixed;outline:2px solid #ffa245;background:rgba(255,162,69,.18);border-radius:2px}");
+	geomSheet = adopt(overlayRoot, "");
+	document.body.appendChild(overlayHost);
+}
+
+function paintGeometry() {
+	if (!geomSheet) return;
+	geomSheet.replaceSync(
+		[...live.entries()]
+			.map(([cls, r]) => `.${cls}{left:${r.x}px;top:${r.y}px;width:${r.width}px;height:${r.height}px}`)
+			.join("\n"),
+	);
+}
+
 export function highlight(el, ms = 900) {
-  if (!document.body) return;
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.setAttribute("data-dev-webmcp", "highlight");
-    Object.assign(overlay.style, {
-      position: "fixed",
-      inset: "0",
-      pointerEvents: "none",
-      zIndex: "2147483647",
-    });
-    document.body.appendChild(overlay);
-  }
-  const r = el.getBoundingClientRect();
-  const box = document.createElement("div");
-  Object.assign(box.style, {
-    position: "fixed",
-    left: `${r.x}px`,
-    top: `${r.y}px`,
-    width: `${r.width}px`,
-    height: `${r.height}px`,
-    outline: "2px solid #ffa245",
-    background: "rgba(255,162,69,.18)",
-    transition: "opacity .3s",
-  });
-  overlay.appendChild(box);
-  setTimeout(() => {
-    box.style.opacity = "0";
-    setTimeout(() => box.remove(), 320);
-  }, ms);
+	if (!document.body) return;
+	ensureOverlay();
+	const r = el.getBoundingClientRect();
+	const cls = `b${++boxSeq}`;
+	const box = document.createElement("div");
+	box.className = `box ${cls}`;
+	if (!geomSheet) {
+		// No adoptedStyleSheets (Safari < 16.4). Best effort — such engines are
+		// unlikely to be the ones enforcing a strict style-src.
+		box.setAttribute(
+			"style",
+			`position:fixed;left:${r.x}px;top:${r.y}px;width:${r.width}px;height:${r.height}px`,
+		);
+	}
+	live.set(cls, r);
+	paintGeometry();
+	overlayRoot.appendChild(box);
+
+	const drop = () => {
+		live.delete(cls);
+		paintGeometry();
+		box.remove();
+	};
+	try {
+		const anim = box.animate([{ opacity: 1 }, { opacity: 0 }], {
+			duration: 320,
+			delay: ms,
+			fill: "forwards",
+		});
+		anim.addEventListener("finish", drop);
+	} catch {
+		/* web animations unavailable */
+	}
+	setTimeout(drop, ms + 1500);
 }
 
 /** Write through the prototype setter so React/Vue controlled inputs notice. */

@@ -78,7 +78,7 @@ export class Snapshotter {
     return this.elToRef.get(el);
   }
 
-  snapshot({ root, maxNodes = 200 } = {}) {
+  snapshot({ root, maxNodes = 200, includeHidden = false } = {}) {
     if (typeof document === "undefined") return "(no document)";
     const scope = root ?? document.body;
     if (!scope) return "(no body)";
@@ -90,12 +90,13 @@ export class Snapshotter {
     const collect = (selector, render) => {
       for (const el of scope.querySelectorAll(selector)) {
         if (seen.has(el)) continue;
-        if (isHidden(el)) continue;
+        const hidden = isHidden(el);
+        if (hidden && !includeHidden) continue;
         if (lines.length >= maxNodes) {
           truncated = true;
           return;
         }
-        const line = render(el);
+        const line = render(el, hidden);
         if (line) {
           seen.add(el);
           lines.push(line);
@@ -108,9 +109,10 @@ export class Snapshotter {
       return name ? `# ${name}` : undefined;
     });
 
-    collect(INTERACTIVE_SELECTOR, (el) => {
+    collect(INTERACTIVE_SELECTOR, (el, hidden) => {
       const ref = this.refFor(el);
       const parts = [`[${ref}]`, roleOf(el), JSON.stringify(accessibleName(el) || "(no label)")];
+      if (hidden) parts.push("hidden");
       const state = stateOf(el);
       if (state) parts.push(state);
       return parts.join(" ");

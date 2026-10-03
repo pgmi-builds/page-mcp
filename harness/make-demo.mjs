@@ -63,7 +63,9 @@ window.devWebmcp?.register({
       geometries: renderer.info.memory.geometries,
       programs: renderer.info.programs?.length ?? null,
     },
-    buttons: { load: btnLoad.disabled, shader: btnShader.disabled, reset: btnReset.disabled },
+    // named 'disabled' on purpose: a key called 'buttons' with true values
+    // read as "enabled" and cost a previous agent a detour.
+    disabled: { load: btnLoad.disabled, shader: btnShader.disabled, reset: btnReset.disabled },
   }, null, 2),
 });
 

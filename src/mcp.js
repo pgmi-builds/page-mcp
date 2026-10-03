@@ -135,6 +135,8 @@ export function specs() {
 
 /** Call a tool directly, bypassing modelContext. Used by the page handle/harness. */
 export async function invoke(name, input) {
+  const def = local.get(name);
+  if (!def) return `Error: no tool named "${name}". Registered: ${[...local.keys()].join(", ")}`;
   return safeRun(def, input, {});
 }
 

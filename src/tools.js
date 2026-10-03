@@ -73,19 +73,29 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         "role, accessible name and state, plus headings. Call this first. Refs are stable across calls, so " +
         "you can keep using a ref you already hold. Set root to a CSS selector to narrow the outline on a " +
         "large page. On a canvas/WebGL page the outline will be nearly empty — that is real, not an error; " +
-        "use the eval tool for application state.",
+        "use the eval tool for application state. Set include_hidden to also list elements that are " +
+        "display:none / visibility:hidden / aria-hidden — file inputs are usually hidden deliberately and " +
+        "would otherwise be invisible to every ref-taking tool.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object",
         properties: {
           root: { type: "string", description: "CSS selector to scope the outline to (default: body)." },
           max_nodes: { type: "number", description: `Max elements to print. Default ${maxNodes}.` },
+          include_hidden: {
+            type: "boolean",
+            description: "Also list hidden elements, marked `hidden`. Default false.",
+          },
         },
       },
-      run: ({ root, max_nodes }) => {
+      run: ({ root, max_nodes, include_hidden }) => {
         const scope = root ? document.querySelector(root) : undefined;
         if (root && !scope) throw new Error(`no element matches root ${JSON.stringify(root)}`);
-        return snap.snapshot({ root: scope ?? undefined, maxNodes: max_nodes ?? maxNodes });
+        return snap.snapshot({
+          root: scope ?? undefined,
+          maxNodes: max_nodes ?? maxNodes,
+          includeHidden: !!include_hidden,
+        });
       },
     },
     {
@@ -302,6 +312,99 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         return out;
       },
     },
+    {
+      name: name("wait"),
+      title: "Wait",
+      description:
+        "Wait until a condition holds, then return. Use this instead of re-snapshotting in a loop after an " +
+        "action that triggers async work (a load, a save, a transition). Exactly one of selector / text / " +
+        "code is required. Returns as soon as the condition is satisfied, or reports the timeout with the " +
+        "current state so you can see what it was still waiting for.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "Wait until this CSS selector matches an element." },
+          text: { type: "string", description: "Wait until the page text contains this substring." },
+          code: {
+            type: "string",
+            description: "Wait until this JS expression returns something truthy. Await is supported.",
+          },
+          timeout_ms: { type: "number", description: "Give up after this long. Default 5000, max 60000." },
+        },
+      },
+      run: async ({ selector, text, code, timeout_ms }) => {
+        const timeout = Math.min(Math.max(Number(timeout_ms) || 5000, 1), 60000);
+        const deadline = Date.now() + timeout;
+        const started = Date.now();
+        const check = async () => {
+          if (selector) return !!document.querySelector(String(selector));
+          if (text) return (document.body?.textContent ?? "").includes(String(text));
+          if (code) {
+            try {
+              return !!(await (0, eval)(`(async () => (${code}))()`));
+            } catch {
+              return false; // a throwing predicate just means "not satisfied yet"
+            }
+          }
+          return true;
+        };
+        const label = selector ? `selector ${JSON.stringify(selector)}` : text ? `text ${JSON.stringify(text)}` : code;
+        while (Date.now() < deadline) {
+          if (await check()) return `Condition met after ${Date.now() - started}ms: ${label}`;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        if (await check()) return `Condition met after ${Date.now() - started}ms: ${label}`;
+        throw new Error(
+          `Timed out after ${timeout}ms waiting for ${label}. Current state:\n${snapshotText({ maxNodes: 60 })}`,
+        );
+      },
+    },
+    {
+      name: name("upload"),
+      title: "Upload file",
+      description:
+        "Put files into a file input or onto a dropzone. Give each file a url (fetched by the page — a path " +
+        "the dev server already serves, e.g. /fixtures/model.glb) or inline base64. If ref is omitted, the " +
+        "first <input type=file> on the page is used, including one that is hidden — which is how most apps " +
+        "hide their file picker, and why a snapshot will not show it. NOTE: this tool runs in the page, so it " +
+        "cannot read a path on the developer's disk; for that the agent's own browser/CDP layer must do the " +
+        "upload (CDP DOM.setFileInputFiles).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          files: {
+            type: "array",
+            description: "Files to attach.",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Filename the app will see." },
+                url: { type: "string", description: "URL the page can fetch the bytes from." },
+                base64: { type: "string", description: "Inline file bytes, base64-encoded." },
+                type: { type: "string", description: "MIME type, e.g. model/gltf-binary." },
+              },
+              required: ["name"],
+            },
+          },
+          ref: refProp("File input or dropzone ref. Defaults to the first <input type=file>."),
+          include_snapshot: includeSnapshotProp,
+        },
+        required: ["files"],
+      },
+      run: async ({ files, ref, include_snapshot }) => {
+        const el = ref
+          ? actable(String(ref), need(String(ref)), "uploading to")
+          : document.querySelector('input[type="file"]');
+        if (!el) {
+          throw new Error(
+            "no file input found on the page and no ref given. Pass the ref of the input or the dropzone.",
+          );
+        }
+        const msg = await attachFiles(el, files ?? []);
+        return after(msg, { includeSnapshot: include_snapshot });
+      },
+    },
   ];
 
   return tools;
@@ -353,6 +456,67 @@ function repr(v, depth = 4, seen = new Set()) {
   } catch {
     return String(v);
   }
+}
+
+/**
+ * Attach files to a file input, or drop them on a dropzone.
+ *
+ * The bytes have to come from somewhere the PAGE can reach — a URL the dev
+ * server is already serving, or inline base64. A path on the developer's own
+ * disk is not reachable from here at all: that is a job for the agent's
+ * browser/CDP layer (CDP `DOM.setFileInputFiles`), not for an in-page tool.
+ */
+async function attachFiles(el, specs) {
+	if (!specs.length) throw new Error("no files given");
+	const built = [];
+	for (const spec of specs) {
+		let blob;
+		if (spec.url) {
+			const res = await fetch(String(spec.url));
+			if (!res.ok) throw new Error(`fetch ${spec.url} -> HTTP ${res.status}`);
+			blob = await res.blob();
+		} else if (spec.base64) {
+			const bin = atob(String(spec.base64));
+			const bytes = new Uint8Array(bin.length);
+			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+			blob = new Blob([bytes]);
+		} else {
+			throw new Error(`file ${JSON.stringify(spec.name)} needs either a url or base64`);
+		}
+		built.push(
+			new File([blob], String(spec.name ?? "file"), {
+				type: spec.type || blob.type || "application/octet-stream",
+			}),
+		);
+	}
+
+	const dt = new DataTransfer();
+	for (const f of built) dt.items.add(f);
+	const summary = built.map((f) => `${f.name} (${f.size} bytes)`).join(", ");
+
+	if (el instanceof HTMLInputElement && el.type === "file") {
+		el.files = dt.files;
+		el.dispatchEvent(new Event("input", { bubbles: true }));
+		el.dispatchEvent(new Event("change", { bubbles: true }));
+		highlight(el);
+		return `Attached ${summary} to the file input and fired input+change.`;
+	}
+
+	// Dropzone: some apps only listen for the drag sequence, so send all of it.
+	const r = el.getBoundingClientRect();
+	const init = {
+		bubbles: true,
+		cancelable: true,
+		composed: true,
+		clientX: r.x + r.width / 2,
+		clientY: r.y + r.height / 2,
+		dataTransfer: dt,
+	};
+	highlight(el);
+	el.dispatchEvent(new DragEvent("dragenter", init));
+	el.dispatchEvent(new DragEvent("dragover", init));
+	el.dispatchEvent(new DragEvent("drop", init));
+	return `Dropped ${summary} on ${describeShort(el)}.`;
 }
 
 function describeShort(el) {
