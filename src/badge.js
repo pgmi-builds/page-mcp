@@ -15,6 +15,10 @@
  * blocked on any page with a `style-src` that lacks 'unsafe-inline' — which is
  * exactly the kind of page most likely to be running a dev tool (see
  * style.js for the measurements).
+ *
+ * The contents REPAINT on registry changes. Rendering once was wrong: an app
+ * registers its own tools a moment after our script runs, so a frozen badge
+ * advertised "13 tools" on a page that exposed 15.
  */
 import { adopt } from "./style.js";
 
@@ -30,6 +34,7 @@ const CSS = `
   border-radius: 999px; padding: 4px 9px; cursor: default; user-select: none;
 }
 .dot b { width: 7px; height: 7px; border-radius: 50%; background: #ffa245; flex: none; }
+.dot u { text-decoration: none; color: #8a8478; }
 .panel {
   display: none; margin-top: 6px; max-width: 340px; max-height: 46vh; overflow: auto;
   background: rgba(12,10,8,.94); border: 1px solid rgba(255,162,69,.35);
@@ -44,30 +49,48 @@ const CSS = `
 export function renderBadge(api, cfg) {
   const runtime = api.runtime();
   const mode = runtime.native ? "native WebMCP" : runtime.polyfilled ? "polyfill" : "unavailable";
-  const tools = api.specs();
+
+  // Tools this package registered itself, so the badge can show the split:
+  // "13 + 2" tells a reader that the app contributed two of them.
+  const own = new Set(api.specs().map((t) => t.name));
 
   const host = document.createElement("div");
   host.setAttribute("data-dev-webmcp", "badge");
   const root = host.attachShadow({ mode: "open" });
   adopt(root, CSS);
 
-  root.innerHTML = `
-<div class="wrap">
-  <div class="dot" tabindex="0" title="dev-webmcp — hover for detail"><b></b>dev-webmcp · ${tools.length} tools · ${esc(mode)}</div>
-  <div class="panel">${esc(
-    `runtime   ${mode}\n` +
-    `origin    ${location.origin}\n` +
-    `tools\n` +
-    tools.map((t) => `  ${t.name}`).join("\n") +
-    `\n\nThis page exposes DOM + JS access to a\nconnected coding agent. Remove the script\ntag (or set data-badge="off") to stop it.`,
-  )}</div>
-</div>`;
+  const dot = document.createElement("div");
+  dot.className = "dot";
+  dot.tabIndex = 0;
+  dot.title = "dev-webmcp — hover for detail";
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  const wrap = document.createElement("div");
+  wrap.className = "wrap";
+  wrap.append(dot, panel);
+  root.append(wrap);
+
+  const paint = () => {
+    const all = api.specs().map((t) => t.name);
+    const extra = all.filter((n) => !own.has(n));
+    const count = extra.length ? `${own.size} + ${extra.length}` : `${all.length}`;
+
+    dot.innerHTML = `<b></b><span></span>`;
+    dot.lastElementChild.textContent = `dev-webmcp · ${count} tools · ${mode}`;
+
+    panel.textContent =
+      `runtime   ${mode}\n` +
+      `origin    ${location.origin}\n` +
+      `tools (${all.length})\n` +
+      all.map((n) => `  ${n}${own.has(n) ? "" : "   (app)"}`).join("\n") +
+      `\n\nThis page exposes DOM + JS access to a\nconnected coding agent. Remove the script\ntag (or set data-badge="off") to stop it.`;
+  };
+  paint();
+
+  // App tools appear after us, so repaint whenever the registry changes.
+  api.subscribe?.(paint);
 
   const mount = () => document.body?.appendChild(host);
   if (document.body) mount();
   else document.addEventListener("DOMContentLoaded", mount, { once: true });
-}
-
-function esc(s) {
-  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
 }

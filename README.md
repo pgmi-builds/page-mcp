@@ -163,4 +163,16 @@ node harness/browser.mjs screenshot /tmp/shot.png
 - Styling survives a response-header CSP of
   `default-src 'self'; script-src 'self'; style-src 'self'` with 0 violations.
 
-Backing research and the positioning argument: [`docs/00-prior-art-and-positioning.md`](docs/00-prior-art-and-positioning.md).
+Independently reproduced by a second agent on a different machine (Chrome 147 + Chrome 151):
+both runtimes 20/20, 15/15 tools usable.
+
+Docs — [index](docs/README.md) ·
+[00 positioning](docs/00-prior-art-and-positioning.md) ·
+[01 agent usability test](docs/01-agent-usability-test.md) ·
+[02 measurements](docs/02-measurements.md) ·
+[03 external verification](docs/03-verification-demo-2026-10-03.md) ·
+[04 drive rerun](docs/04-verification-drive-rerun-2026-10-03.md)
+
+> Headless without software GL (`--enable-unsafe-swiftshader --use-angle=swiftshader`) will
+> hide any app-registered tools: the app's module aborts on a failed WebGL context and its
+> `register()` calls never run. `harness/browser.mjs` and `drive.mjs` pass the flags already.

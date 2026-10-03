@@ -21,6 +21,32 @@ import { initializeWebMCPPolyfill } from "@mcp-b/webmcp-polyfill";
  *  callable from page JS (and from our own harness) without a round trip. */
 const local = new Map();
 
+/**
+ * Registry-change listeners.
+ *
+ * The page indicator needs this: it renders once, and an app registering its
+ * own tools a moment later left the badge advertising a stale count (agents
+ * saw "13 tools" on a page that exposed 15). We do not rely on WebMCP's
+ * `toolchange` event for it — that event reflects the modelContext, not our
+ * local registry, and its support varies by implementation.
+ */
+const listeners = new Set();
+
+/** Subscribe to tool registration/removal. Returns an unsubscribe. */
+export function subscribe(fn) {
+	listeners.add(fn);
+	return () => listeners.delete(fn);
+}
+
+function emit() {
+	for (const fn of listeners) {
+		try {
+			fn();
+		} catch {
+			/* an observer must never break registration */
+		}
+	}
+}
 let booted = false;
 let nativeAtBoot = false;
 let polyfillFailed = false;
@@ -98,6 +124,24 @@ function validate(schema, value, path = "") {
 			if (obj[key] === undefined) continue;
 			errs.push(...validate(sub, obj[key], key));
 		}
+
+		// Unknown keys are rejected rather than ignored. Both agents that used this
+		// surface independently lost time to a silently-dropped parameter: a typo'd
+		// `delta_y` scrolled by 0 and reported success, and an extra `bogus: 1` was
+		// simply discarded. A typo should be an error, and the error should say
+		// what IS accepted. Opt out with additionalProperties: true.
+		if (schema.additionalProperties !== true) {
+			const known = new Set(Object.keys(schema.properties ?? {}));
+			const unknown = Object.keys(obj).filter((k) => !known.has(k));
+			if (unknown.length) {
+				errs.push(
+					`unknown ${unknown.length > 1 ? "properties" : "property"} ` +
+						unknown.map((k) => `\"${k}\"`).join(", ") +
+						` — accepted: ${known.size ? [...known].join(", ") : "(none)"}`,
+				);
+			}
+		}
+
 		return errs;
 	}
 
@@ -168,6 +212,7 @@ async function safeRun(def, input, opts) {
 export function register(def, { signal } = {}) {
   boot();
   local.set(def.name, def);
+  emit();
 
   const c = ctx();
   if (c) {
@@ -194,7 +239,9 @@ export function register(def, { signal } = {}) {
     }
   }
 
-  const dispose = () => local.delete(def.name);
+  const dispose = () => {
+    if (local.delete(def.name)) emit();
+  };
   if (signal) {
     if (signal.aborted) dispose();
     else signal.addEventListener("abort", dispose, { once: true });

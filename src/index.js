@@ -16,7 +16,7 @@
  */
 import { installCapture } from "./capture.js";
 import { buildTools } from "./tools.js";
-import { invoke, names, register, runtimeInfo, specs } from "./mcp.js";
+import { invoke, names, register, runtimeInfo, specs, subscribe } from "./mcp.js";
 import { renderBadge } from "./badge.js";
 
 const VERSION = "0.0.1";
@@ -48,6 +48,8 @@ const api = {
   invoke,
   /** Specs of every tool this pack registered. */
   specs,
+  /** Subscribe to registry changes (tools added/removed). Returns an unsubscribe. */
+  subscribe,
   /** What runtime we landed on: native WebMCP, or the bundled polyfill. */
   runtime: runtimeInfo,
   dispose: () => disposers.forEach((d) => d()),

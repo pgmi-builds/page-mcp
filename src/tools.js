@@ -356,14 +356,28 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         const timeout = Math.min(Math.max(Number(timeout_ms) || 5000, 1), 60000);
         const deadline = Date.now() + timeout;
         const started = Date.now();
+        // Remember WHY a predicate failed. Swallowing the exception made
+        // "the condition is not true yet" indistinguishable from "your predicate
+        // is broken": an agent with a typo'd expression waited out the whole
+        // timeout and then reported that the condition never became true.
+        let lastError = null;
         const check = async () => {
-          if (selector) return !!document.querySelector(String(selector));
-          if (text) return (document.body?.textContent ?? "").includes(String(text));
+          if (selector) {
+            lastError = null;
+            return !!document.querySelector(String(selector));
+          }
+          if (text) {
+            lastError = null;
+            return (document.body?.textContent ?? "").includes(String(text));
+          }
           if (code) {
             try {
-              return !!(await (0, eval)(`(async () => (${code}))()`));
-            } catch {
-              return false; // a throwing predicate just means "not satisfied yet"
+              const v = !!(await (0, eval)(`(async () => (${code}))()`));
+              lastError = null;
+              return v;
+            } catch (e) {
+              lastError = e;
+              return false;
             }
           }
           return true;
@@ -375,7 +389,12 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         }
         if (await check()) return `Condition met after ${Date.now() - started}ms: ${label}`;
         throw new Error(
-          `Timed out after ${timeout}ms waiting for ${label}. Current state:\n${snapshotText({ maxNodes: 60 })}`,
+          `Timed out after ${timeout}ms waiting for ${label}.` +
+            (lastError
+              ? `\n\nThe predicate THREW on every attempt, so this may be a broken condition rather than a ` +
+                `slow one: ${lastError.name}: ${lastError.message}`
+              : "") +
+            `\n\nCurrent state:\n${snapshotText({ maxNodes: 60 })}`,
         );
       },
     },
@@ -407,7 +426,14 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
             },
           },
           ref: refProp("File input or dropzone ref. Defaults to the first <input type=file>."),
-          include_snapshot: includeSnapshotProp,
+          // Not includeSnapshotProp: this tool defaults the other way, and
+          // advertising "Default true" here contradicted the implementation.
+          include_snapshot: {
+            type: "boolean",
+            description:
+              "Include a page outline in the result. Default false — file parsing is always async, so an " +
+              "outline taken here would show pre-upload state.",
+          },
         },
         required: ["files"],
       },
