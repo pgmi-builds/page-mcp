@@ -105,11 +105,6 @@ async function run({ label, native }) {
       /disabled/i.test(clickResult),
       clickResult.split("\n")[0],
     );
-    record(
-      `${label}: clicking a disabled control explains itself`,
-      /disabled/i.test(clickResult),
-      clickResult.split("\n")[0],
-    );
 
     // ---- 5. app-level tool reaches state the DOM cannot ------------------
     const state1 = await call("vitrine_state");
@@ -142,6 +137,57 @@ async function run({ label, native }) {
       /canvases/.test(evalResult),
       evalResult,
     );
+
+    // ---- 9. in-page network capture --------------------------------------
+    // Uses URLs that exist (or don't) on any origin, so this also holds when
+    // the suite is run against the deployed bundle.
+    await page.addScriptTag({
+      content: `
+        window.__netProbe = {
+          ok: () => fetch(location.href).then((r) => r.status),
+          bad: () => fetch("/__dev-webmcp-missing__").then((r) => r.status),
+        };
+      `,
+    });
+    const okStatus = await page.evaluate(() => window.__netProbe.ok());
+    const badStatus = await page.evaluate(() => window.__netProbe.bad());
+    await new Promise((r) => setTimeout(r, 400));
+    const netFail = await call("dev_network", { failed_only: true });
+    record(
+      `${label}: network capture surfaces a request the UI never reported`,
+      badStatus === 404 && /404/.test(netFail) && /__dev-webmcp-missing__/.test(netFail),
+      netFail.split("\n").slice(0, 6).join("\n"),
+    );
+    const netOne = await call("dev_network", { filter: "__dev-webmcp-missing__" });
+    record(
+      `${label}: network entries carry status, size and an initiator call site`,
+      // The initiator can be `(agent-injected script):1:15`, which contains a
+      // space — match the trailing line:col rather than a whole token.
+      okStatus === 200 && /404/.test(netOne) && /at\s+.*:\d+:\d+/.test(netOne),
+      netOne.split("\n").slice(0, 5).join("\n"),
+    );
+    // The readable-initiator case needs a script served from the page's own
+    // origin, which the deployed demo does not have.
+    const fixtureServed = await page.evaluate(async () => {
+      try {
+        return (await fetch("/harness/net-fixture.js", { method: "HEAD" })).ok;
+      } catch {
+        return false;
+      }
+    });
+    if (fixtureServed) {
+      await page.addScriptTag({ url: "/harness/net-fixture.js" });
+      const bytes = await page.evaluate(() => window.__netProbe.ok());
+      await new Promise((r) => setTimeout(r, 400));
+      const netPath = await call("dev_network", { filter: "triangle\\.glb" });
+      record(
+        `${label}: initiator names the page source that made the call`,
+        bytes === 624 && /harness\/net-fixture\.js:\d+:\d+/.test(netPath),
+        netPath.split("\n").slice(0, 4).join("\n"),
+      );
+    } else {
+      console.log(`NOTE  ${label}: no same-origin script fixture — readable-initiator case skipped`);
+    }
 
     return { info, names };
   } finally {

@@ -97,6 +97,7 @@ to expose them.
 | `dev_upload` | Attach files (url or base64) to a file input or dropzone |
 | `dev_wait` | Wait for a selector, text or JS predicate |
 | `dev_console` | Console + uncaught errors + unhandled rejections |
+| `dev_network` | fetch / XHR / beacon, **with the call site that made each request** |
 | `dev_eval` | JS REPL |
 
 Names are prefixed (`data-prefix`) so they cannot collide with another browser

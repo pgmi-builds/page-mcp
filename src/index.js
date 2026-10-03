@@ -15,14 +15,16 @@
  *   data-max-nodes="200"   default snapshot budget
  */
 import { installCapture } from "./capture.js";
+import { installNetwork } from "./network.js";
 import { buildTools } from "./tools.js";
 import { invoke, names, register, runtimeInfo, specs, subscribe } from "./mcp.js";
 import { renderBadge } from "./badge.js";
 
 const VERSION = "0.0.1";
 
-// 1. Capture BEFORE anything else can log.
+// 1. Capture BEFORE anything else can log or fetch.
 installCapture();
+installNetwork();
 
 // 2. Config from our own script tag.
 const self = document.currentScript;

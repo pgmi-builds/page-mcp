@@ -12,6 +12,7 @@
 import { Snapshotter } from "./snapshot.js";
 import { fillElement, highlight, hover, pressKey, scrollBy, scrollIntoView, selectOption, synthClick, typeInto } from "./act.js";
 import { readLogs, clearLogs } from "./capture.js";
+import { readNetwork, clearNetwork } from "./network.js";
 
 const refProp = (desc) => ({ type: "string", description: desc });
 
@@ -326,6 +327,52 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
       run: ({ level, tail, clear }) => {
         const out = readLogs({ level, tail });
         if (clear) clearLogs();
+        return out;
+      },
+    },
+    {
+      name: name("network"),
+      title: "Read network activity",
+      description:
+        "Read the page's own HTTP activity — fetch, XMLHttpRequest and sendBeacon — captured in-page in a " +
+        "ring buffer of 200. Call this when an action did nothing and the UI did not say why: a save that " +
+        "silently failed is usually a 4xx/5xx or a rejected fetch that the app never surfaced, which is " +
+        "invisible in a snapshot and in the console. Each entry has status, duration, size and the call site " +
+        "that made the request, so you can go straight to the code that needs fixing. Failed requests are " +
+        "listed, never dropped. WebSocket and EventSource frames are NOT captured. Runs in-page, so it needs " +
+        "no devtools session.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "How many of the most recent matching requests (default 20, max 200)." },
+          filter: {
+            type: "string",
+            description: "Only requests whose URL contains this string, or matches it as a regular expression.",
+          },
+          failed_only: {
+            type: "boolean",
+            description:
+              "Only requests that failed outright or returned 4xx/5xx. Try this first when an action " +
+              "silently did nothing.",
+          },
+          include_bodies: {
+            type: "boolean",
+            description:
+              "Include request and response bodies (each truncated to 2000 chars). Off by default — bodies " +
+              "are large and usually not needed to find the failure.",
+          },
+          clear: { type: "boolean", description: "Clear the buffer after reading." },
+        },
+      },
+      run: ({ limit, filter, failed_only, include_bodies, clear }) => {
+        const out = readNetwork({
+          limit,
+          filter,
+          failedOnly: failed_only,
+          includeBodies: include_bodies,
+        });
+        if (clear) clearNetwork();
         return out;
       },
     },
