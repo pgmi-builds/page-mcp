@@ -114,7 +114,9 @@ export class Snapshotter {
         // generic container it is "name from content" — the concatenated text of
         // every descendant — so matching on it makes a wrapper div shadow the
         // button inside it. Plain-text elements match on their own text instead.
-        ...(textOnly ? [] : [["name", accessibleName(el)]]),
+        // Tag and role are matchable on purpose: someone who wants "the button"
+        // types "button", and answering "no matches" to that costs a round trip.
+        ...(textOnly ? [] : [["name", accessibleName(el)], ["tag", el.tagName.toLowerCase()], ["role", roleOf(el)]]),
         ["text", ownText(el)],
         ["value", typeof el.value === "string" ? el.value : ""],
         ["placeholder", el.getAttribute?.("placeholder") ?? ""],

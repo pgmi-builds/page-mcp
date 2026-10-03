@@ -102,16 +102,25 @@ export function auditGeometry({ maxExamples = 4, maxNodes = 6000 } = {}) {
     const style = getComputedStyle(el);
     if (style.display === "none" || style.visibility === "hidden") continue;
 
-    // 1. text the layout could not fit
-    const text = ownText(el);
-    if (text && el.scrollWidth > el.clientWidth + 1) {
-      add("clipped-text", el, `"${text.slice(0, 60)}" needs ${el.scrollWidth}px in ${el.clientWidth}px`);
+    const r = el.getBoundingClientRect();
+
+    // Zero-size first: an interactive element with no box is its own defect, and
+    // reporting it a second time as clipped text ("needs 26px in 0px") says the
+    // same thing twice with more confusion.
+    if (el.matches(INTERACTIVE_SELECTOR) && r.width === 0 && r.height === 0) {
+      add("zero-size", el, "interactive but 0x0");
+      continue;
     }
 
-    // 2. an interactive element with no box — unclickable by construction
-    if (el.matches(INTERACTIVE_SELECTOR)) {
-      const r = el.getBoundingClientRect();
-      if (r.width === 0 && r.height === 0) add("zero-size", el, "interactive but 0x0");
+    // Text the layout could not fit — horizontal, by far the common case, so the
+    // message names the axis and the numbers are not left to be guessed at.
+    const text = ownText(el);
+    if (text && el.scrollWidth > el.clientWidth + 1) {
+      add(
+        "clipped-text",
+        el,
+        `"${text.slice(0, 60)}" needs ${el.scrollWidth}px of width in ${el.clientWidth}px`,
+      );
     }
 
     // 3. an image that failed to decode

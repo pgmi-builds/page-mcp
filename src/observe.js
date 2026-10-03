@@ -74,7 +74,14 @@ function onMutations(batch) {
       if (m.type === "childList") {
         for (const n of m.addedNodes) {
           if (n.nodeType !== 1 || isOurs(n)) continue;
-          push({ t: Date.now(), kind: "added", target: label(n), detail: snippet(n) });
+          // One appendChild arrives as a single record for the top node, so name
+          // what came in with it — otherwise "added div" hides the button the
+          // agent actually cares about.
+          const kids = n.children ? [...n.children].slice(0, 3).map((c) => c.tagName.toLowerCase()) : [];
+          // Show the children even when the parent has text: "added div —
+          // \"onetwo\"" hides the two elements an agent would act on next.
+          const withKids = kids.length ? ` (+${n.children.length}: ${kids.join(", ")})` : "";
+          push({ t: Date.now(), kind: "added", target: label(n), detail: `${withKids} ${snippet(n)}`.trim() });
         }
         for (const n of m.removedNodes) {
           // The node is detached but still readable here — this callback is the

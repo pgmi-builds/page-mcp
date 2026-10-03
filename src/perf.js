@@ -44,7 +44,15 @@ export async function perfSnapshot({ frames = 12 } = {}) {
 
   const fcp = paint.find((e) => e.name === "first-contentful-paint");
   out.firstContentfulPaintMs = ms(fcp?.startTime);
-  out.largestContentfulPaintMs = ms(lcp.length ? lcp[lcp.length - 1].startTime : null);
+  const lcpEntry = lcp.length ? lcp[lcp.length - 1] : null;
+  out.largestContentfulPaintMs = ms(lcpEntry?.startTime);
+  // LCP is defined as the largest paint SO FAR, so in a long-lived session it
+  // keeps updating — an upload that renders a big canvas at t=4min becomes the
+  // new LCP and reads as an absurd load time. Say which paint it is.
+  if (lcpEntry && lcpEntry.startTime > 10000) {
+    out.lcpNote = `LCP is a paint from t=${ms(lcpEntry.startTime)}s after load, not from page load — ` +
+      `in a long-lived session it tracks the newest large render, not load quality`;
+  }
 
   const slow = longtasks.filter((t) => t.duration >= 50);
   out.longTasks = {

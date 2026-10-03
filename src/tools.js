@@ -165,9 +165,11 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         });
         if (!total) {
           return (
-            `No element matching ${JSON.stringify(String(query))}. Hidden elements are skipped unless ` +
-            `include_hidden is set, and a canvas- or WebGL-driven page may have no text to match at all — ` +
-            `take a snapshot to see what this page exposes.`
+            `No element matching ${JSON.stringify(String(query))}. The query matches text, accessible names, ` +
+            `values, tags and roles — "button" does find buttons, but a word that appears ON the element ` +
+            `is usually the better query. Hidden elements are skipped unless include_hidden is set, and a ` +
+            `canvas- or WebGL-driven page may have no text to match at all — take a snapshot to see what ` +
+            `this page exposes.`
           );
         }
         return (
@@ -596,8 +598,9 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         "pointerId, which is what inertia and sortable handlers need; a click pair reads to them as a tap. " +
         "`steps` raises the move count for velocity-based handlers. Events are synthetic, so isTrusted is " +
         "false — application code sees them, browser-level gestures do not happen. If an app swallows the " +
-        "first interaction (to dismiss an intro, arm a gesture handler), the FIRST drag is a no-op: drag " +
-        "twice before concluding the gesture does nothing.",
+        "false — application code sees them, browser-level gestures do not happen. Some apps swallow their " +
+        "first interaction (to dismiss an intro or arm a gesture handler), so a drag can be a no-op the " +
+        "first time: if nothing moved, drag again before concluding the gesture is broken.",
       inputSchema: {
         type: "object",
         properties: {
@@ -689,7 +692,9 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         "Run JavaScript in the page and get back a JSON-ish representation of the result. Await is " +
         "supported. This is your console: use it for anything the DOM outline cannot show — application " +
         "state, framework internals, WebGL scene graphs, computed values, network calls. Errors come back " +
-        "as 'Uncaught …'. Note: module-scoped variables are not reachable; globals and window properties are.",
+        "as 'Uncaught …'. One expression evaluates to its value; a mix of statements and a trailing " +
+        "expression runs as statements and returns undefined, so end with the expression alone or an " +
+        "explicit return. Module-scoped variables are not reachable; globals and window properties are.",
       inputSchema: {
         type: "object",
         properties: {
