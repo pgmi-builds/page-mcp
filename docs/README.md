@@ -10,12 +10,15 @@
 | 05 | [recheck-after-fixes-2026-10-03](05-recheck-after-fixes-2026-10-03.md) | **另一 agent（dev3 / Hermes）** | 对 `a4bffe6` 三条修复的逐条复验、未知参数严格化实测 |
 | 06 | [proposed-tool-surface](06-proposed-tool-surface.md) | **另一 agent（dev3 / Hermes）** | 截图能力专项实测（canvas 时序 / clip 裁剪 / hit-test）、分层责任、6 个新工具建议（**建议稿，待拍板**） |
 | 07 | [recheck-of-05-and-06-2026-10-03](07-recheck-of-05-and-06-2026-10-03.md) | 本 session | 对 05/06 的独立复验：05 全部通过、06 两处更正、陈旧标签页陷阱 |
+| 08 | [tool-surface-benchmark](08-tool-surface-benchmark.md) | 本 session | 对 BU / Playwright MCP / DevTools MCP 的能力对标：抄什么、超什么、**不做什么**、执行顺序 |
+| 09 | [agent-as-user-2026-10-03](09-agent-as-user-2026-10-03.md) | **另一 agent（新工具的真实用户）** | 22+2 工具面的真实使用报告（进行中/刚落地，以文件为准） |
+| — | [research/](research/) | 调研子代理 | 一手清单：Browser Use 24 actions、Playwright MCP 72、DevTools MCP 66、页内库、WebMCP 生态、polyfill 注解实测 |
 
 > 03/04 是**独立第三方复现**，不是本 session 自述。它们原名为 `01-…` / `02-…`，
 > 与本 session 的 01/02 撞号，已改编号；**正文未改**，只更新了交叉引用。
 > 05/06 是同一 agent 在修复**之后**写的第二批：05 是复验，06 是建议稿。
 
-阅读顺序：**00 决定做什么 → 02 决定怎么做（硬约束）→ 01 检验做出来没有 → 03/04 看别人能不能复现 → 05 看修复是否真的生效 → 06 看下一步该加什么 → 07 看 05/06 本身可不可信**。
+阅读顺序：**00 决定做什么 → 02 硬约束 → 01 检验 → 03/04 复现 → 05 修复生效否 → 06 下一步 → 07 报告可不可信 → 08 对标与取舍（执行顺序在 §6）→ research/ 是 08 的证据层**。
 
 ---
 
