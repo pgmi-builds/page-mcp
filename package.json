@@ -1,0 +1,17 @@
+{
+  "name": "dev-webmcp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "CDN-delivered, headless WebMCP tool provider: drop one <script> into a web UI and register DOM/UI/devtools tools that an external coding agent can call.",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node serve.mjs",
+    "drive": "node harness/drive.mjs"
+  },
+  "devDependencies": {
+    "@mcp-b/webmcp-polyfill": "^5.1.0",
+    "esbuild": "^0.25.0",
+    "puppeteer-core": "^25.12.0"
+  }
+}

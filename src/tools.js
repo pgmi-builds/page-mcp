@@ -1,0 +1,366 @@
+/**
+ * The tool surface.
+ *
+ * Names are prefixed (default `dev_`) on purpose: a coding agent may also be
+ * holding chrome-devtools-mcp's `click` / `fill` / `take_snapshot`, and two
+ * tools with the same name in one context is a coin flip.
+ *
+ * Descriptions are written for a model, not for a human browsing a README —
+ * they say WHEN to call the tool and what the output looks like, because that
+ * is what changes behaviour.
+ */
+import { Snapshotter } from "./snapshot.js";
+import { fillElement, highlight, hover, pressKey, scrollBy, scrollIntoView, selectOption, synthClick, typeInto } from "./act.js";
+import { readLogs, clearLogs } from "./capture.js";
+
+const refProp = (desc) => ({ type: "string", description: desc });
+
+export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterAction = true } = {}) {
+  const snap = new Snapshotter();
+  const name = (n) => prefix + n;
+
+  const snapshotText = (opts = {}) => snap.snapshot({ maxNodes: opts.maxNodes ?? maxNodes });
+
+  /** Resolve a ref, or fail with a fresh outline so the model can re-orient. */
+  const need = (ref) => {
+    const el = snap.resolve(ref);
+    if (!el) {
+      throw new Error(
+        `No live element for ref "${ref}" — it was removed or replaced. Current page:\n${snapshotText()}`,
+      );
+    }
+    return el;
+  };
+
+  /**
+   * A disabled control silently swallows every event we can synthesize — the
+   * click "succeeds" and nothing happens, then the agent retries forever.
+   * Say so instead, and say what is probably missing.
+   */
+  const actable = (ref, el, verb) => {
+    if (el.disabled || el.getAttribute("aria-disabled") === "true") {
+      throw new Error(
+        `Ref ${ref} (${describeShort(el)}) is disabled — ${verb} it does nothing. ` +
+          `The page state must change first (often a prerequisite action is required).\n\nPage now:\n${snapshotText()}`,
+      );
+    }
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) {
+      throw new Error(
+        `Ref ${ref} (${describeShort(el)}) has zero size — it is not visible, so ${verb} cannot hit it. ` +
+          `An ancestor may be collapsed, or the element is rendered off-screen.\n\nPage now:\n${snapshotText()}`,
+      );
+    }
+    return el;
+  };
+
+  const after = (msg, { includeSnapshot }) => {
+    const wantSnapshot = includeSnapshot ?? snapshotAfterAction;
+    return wantSnapshot ? `${msg}\n\nPage now:\n${snapshotText({ maxNodes: 80 })}` : msg;
+  };
+
+  const includeSnapshotProp = {
+    type: "boolean",
+    description: `Include a fresh page outline in the result. Default ${snapshotAfterAction}.`,
+  };
+
+  const tools = [
+    {
+      name: name("snapshot"),
+      title: "Snapshot page",
+      description:
+        "Read a text outline of the current page: interactive elements with stable refs (e.g. e7), their " +
+        "role, accessible name and state, plus headings. Call this first. Refs are stable across calls, so " +
+        "you can keep using a ref you already hold. Set root to a CSS selector to narrow the outline on a " +
+        "large page. On a canvas/WebGL page the outline will be nearly empty — that is real, not an error; " +
+        "use the eval tool for application state.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          root: { type: "string", description: "CSS selector to scope the outline to (default: body)." },
+          max_nodes: { type: "number", description: `Max elements to print. Default ${maxNodes}.` },
+        },
+      },
+      run: ({ root, max_nodes }) => {
+        const scope = root ? document.querySelector(root) : undefined;
+        if (root && !scope) throw new Error(`no element matches root ${JSON.stringify(root)}`);
+        return snap.snapshot({ root: scope ?? undefined, maxNodes: max_nodes ?? maxNodes });
+      },
+    },
+    {
+      name: name("read"),
+      title: "Read element",
+      description:
+        "Full detail for one ref from the latest snapshot: text, bounding rect, all attributes, computed " +
+        "style essentials, and a CSS path. Use when the outline was not enough to decide.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: { ref: refProp('Element ref from the snapshot, e.g. "e7".') },
+        required: ["ref"],
+      },
+      run: ({ ref }) => snap.describe(String(ref)),
+    },
+    {
+      name: name("click"),
+      title: "Click",
+      description:
+        "Click an element by ref. Dispatches a real pointer/mouse sequence, so menus and popovers that " +
+        "open on pointerdown work. The element is flashed on screen so a human can see what was touched.",
+      inputSchema: {
+        type: "object",
+        properties: { ref: refProp("Element ref from the snapshot."), include_snapshot: includeSnapshotProp },
+        required: ["ref"],
+      },
+      run: ({ ref, include_snapshot }) => {
+        const el = actable(String(ref), need(String(ref)), "clicking");
+        scrollIntoView(el);
+        highlight(el);
+        synthClick(el);
+        return after(`Clicked ${ref} (${describeShort(el)}).`, { includeSnapshot: include_snapshot });
+      },
+    },
+    {
+      name: name("fill"),
+      title: "Fill field",
+      description:
+        "Set the value of an input, textarea or contenteditable in one shot (not keystroke by keystroke). " +
+        "Writes through the native value setter so React/Vue controlled inputs register the change. " +
+        "Use type instead when the app reacts to individual keystrokes (autocomplete, search-as-you-type).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ref: refProp("Element ref from the snapshot."),
+          value: { type: "string", description: "The text to set." },
+          include_snapshot: includeSnapshotProp,
+        },
+        required: ["ref", "value"],
+      },
+      run: ({ ref, value, include_snapshot }) => {
+        const el = actable(String(ref), need(String(ref)), "filling");
+        scrollIntoView(el);
+        highlight(el);
+        fillElement(el, String(value ?? ""));
+        return after(`Filled ${ref} with ${JSON.stringify(String(value ?? ""))}.`, {
+          includeSnapshot: include_snapshot,
+        });
+      },
+    },
+    {
+      name: name("type"),
+      title: "Type text",
+      description:
+        "Type text into a field one character at a time, firing keydown/keypress/input/keyup per character. " +
+        "Slower than fill but produces the event stream that autocomplete and search-as-you-type need.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ref: refProp("Element ref from the snapshot."),
+          text: { type: "string", description: "The text to type." },
+          include_snapshot: includeSnapshotProp,
+        },
+        required: ["ref", "text"],
+      },
+      run: ({ ref, text, include_snapshot }) => {
+        const el = actable(String(ref), need(String(ref)), "typing into");
+        scrollIntoView(el);
+        highlight(el);
+        typeInto(el, String(text ?? ""));
+        return after(`Typed ${JSON.stringify(String(text ?? ""))} into ${ref}.`, {
+          includeSnapshot: include_snapshot,
+        });
+      },
+    },
+    {
+      name: name("press"),
+      title: "Press key",
+      description:
+        "Press a key or key name on an element or the focused element. Use for Enter-to-submit, Escape-to-close, Tab, arrow keys. Omit ref to target whatever currently has focus.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: 'Key name, e.g. "Enter", "Escape", "Tab", "ArrowDown".' },
+          ref: refProp("Optional element ref; defaults to the focused element."),
+          include_snapshot: includeSnapshotProp,
+        },
+        required: ["key"],
+      },
+      run: ({ key, ref, include_snapshot }) => {
+        const el = ref ? need(String(ref)) : undefined;
+        pressKey(el, String(key));
+        return after(`Pressed ${key}${el ? ` on ${ref}` : ""}.`, { includeSnapshot: include_snapshot });
+      },
+    },
+    {
+      name: name("select"),
+      title: "Select option",
+      description:
+        "Choose an option in a native <select> by its value, visible label or text. Only works for real " +
+        "<select> elements — for custom dropdowns, click the trigger then click the option ref.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ref: refProp("Element ref of the <select>."),
+          value: { type: "string", description: "Option value, label or text to choose." },
+          include_snapshot: includeSnapshotProp,
+        },
+        required: ["ref", "value"],
+      },
+      run: ({ ref, value, include_snapshot }) => {
+        const el = need(String(ref));
+        highlight(el);
+        selectOption(el, String(value ?? ""));
+        return after(`Selected ${JSON.stringify(String(value ?? ""))} in ${ref}.`, {
+          includeSnapshot: include_snapshot,
+        });
+      },
+    },
+    {
+      name: name("hover"),
+      title: "Hover",
+      description: "Move the pointer over an element (tooltips, hover menus).",
+      inputSchema: {
+        type: "object",
+        properties: { ref: refProp("Element ref from the snapshot."), include_snapshot: includeSnapshotProp },
+        required: ["ref"],
+      },
+      run: ({ ref, include_snapshot }) => {
+        const el = need(String(ref));
+        scrollIntoView(el);
+        highlight(el);
+        hover(el);
+        return after(`Hovered ${ref}.`, { includeSnapshot: include_snapshot });
+      },
+    },
+    {
+      name: name("scroll"),
+      title: "Scroll",
+      description:
+        "Scroll the document by a pixel delta, or bring a ref into view. Use before clicking something " +
+        "that is off-screen (intersection-observer lazy content only renders once scrolled near).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ref: refProp("Optional element ref to scroll into view."),
+          dx: { type: "number", description: "Horizontal delta in px (default 0)." },
+          dy: { type: "number", description: "Vertical delta in px (default 0 when ref is given)." },
+          include_snapshot: includeSnapshotProp,
+        },
+      },
+      run: ({ ref, dx, dy, include_snapshot }) => {
+        let msg;
+        if (ref) {
+          scrollIntoView(need(String(ref)));
+          msg = `Scrolled ${ref} into view.`;
+        } else {
+          msg = scrollBy(Number(dx) || 0, Number(dy) || 0);
+        }
+        return after(msg, { includeSnapshot: include_snapshot });
+      },
+    },
+    {
+      name: name("eval"),
+      title: "Evaluate JavaScript",
+      description:
+        "Run JavaScript in the page and get back a JSON-ish representation of the result. Await is " +
+        "supported. This is your console: use it for anything the DOM outline cannot show — application " +
+        "state, framework internals, WebGL scene graphs, computed values, network calls. Errors come back " +
+        "as 'Uncaught …'. Note: module-scoped variables are not reachable; globals and window properties are.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "JavaScript expression or statements. Await is allowed." },
+        },
+        required: ["code"],
+      },
+      run: async ({ code }) => evalInPage(String(code ?? "")),
+    },
+    {
+      name: name("console"),
+      title: "Read console",
+      description:
+        "Read console output, uncaught errors and unhandled promise rejections captured since the page " +
+        "loaded (ring buffer of 500). This is the browser console, in-page, so it also works when no " +
+        "devtools session is attached. Filter with level, take the last N with tail.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          level: {
+            type: "string",
+            enum: ["all", "log", "info", "warn", "error", "debug", "uncaught", "unhandledrejection"],
+            description: "Filter by level (default all).",
+          },
+          tail: { type: "number", description: "How many of the most recent entries (default 40, max 200)." },
+          clear: { type: "boolean", description: "Clear the buffer after reading." },
+        },
+      },
+      run: ({ level, tail, clear }) => {
+        const out = readLogs({ level, tail });
+        if (clear) clearLogs();
+        return out;
+      },
+    },
+  ];
+
+  return tools;
+}
+
+/** REPL semantics: try as an expression, fall back to a statement block. */
+export async function evalInPage(code) {
+  const runner = (src) => (0, eval)(`(async () => { ${src} })()`);
+  try {
+    let result;
+    try {
+      result = await runner(`return (${code});`);
+    } catch (e) {
+      if (e instanceof SyntaxError) result = await runner(code);
+      else throw e;
+    }
+    return `→ ${clip(repr(result), 4000)}`;
+  } catch (e) {
+    const stack = String(e?.stack ?? "")
+      .split("\n")
+      .slice(0, 3)
+      .join("\n  ");
+    return `Uncaught ${e?.name ?? "Error"}: ${e?.message ?? String(e)}${stack ? `\n  ${stack}` : ""}`;
+  }
+}
+
+function repr(v, depth = 4, seen = new Set()) {
+  try {
+    if (v === null) return "null";
+    if (v === undefined) return "undefined";
+    const t = typeof v;
+    if (t === "string") return JSON.stringify(clip(v, 800));
+    if (t === "number" || t === "boolean" || t === "bigint") return String(v);
+    if (t === "function") return `ƒ ${v.name || "anonymous"}()`;
+    if (t === "symbol") return v.toString();
+    if (v instanceof Error) return `${v.name}: ${v.message}`;
+    if (v instanceof Element) return `<${v.tagName.toLowerCase()}${v.id ? "#" + v.id : ""}>`;
+    if (v instanceof NodeList || Array.isArray(v)) {
+      const arr = [...v];
+      const head = arr.slice(0, 20).map((x) => repr(x, depth - 1, seen)).join(", ");
+      return `[${head}${arr.length > 20 ? `, …(${arr.length})` : ""}]`;
+    }
+    if (depth <= 0) return "{…}";
+    if (seen.has(v)) return "[Circular]";
+    seen.add(v);
+    const keys = Object.keys(v);
+    const head = keys.slice(0, 25).map((k) => `${k}: ${repr(v[k], depth - 1, seen)}`).join(", ");
+    return `{ ${head}${keys.length > 25 ? ", …" : ""} }`;
+  } catch {
+    return String(v);
+  }
+}
+
+function describeShort(el) {
+  const tag = el.tagName.toLowerCase();
+  const text = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+  return `<${tag}${el.id ? "#" + el.id : ""}>${text ? ` ${JSON.stringify(clip(text, 40))}` : ""}`;
+}
+
+function clip(s, n) {
+  return s.length > n ? s.slice(0, n) + "…" : s;
+}
