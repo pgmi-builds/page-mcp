@@ -15,6 +15,8 @@ import { readLogs, clearLogs } from "./capture.js";
 import { readNetwork, clearNetwork } from "./network.js";
 import { storageOp } from "./storage.js";
 import { boxOf, auditGeometry } from "./geometry.js";
+import { readChanges } from "./observe.js";
+import { perfSnapshot } from "./perf.js";
 
 const refProp = (desc) => ({ type: "string", description: desc });
 
@@ -234,6 +236,154 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         }
         if (page.length) parts.push(`  page:\n${page.map((p) => `    ${p}`).join("\n")}`);
         return `Layout audit — ${scanned} element(s) scanned:\n${parts.join("\n")}`;
+      },
+    },
+    {
+      name: name("changes"),
+      title: "What changed",
+      description:
+        "Read the DOM changes recorded since a token, in order — the cheap way to learn what an action " +
+        "actually did. Call it once BEFORE the action to get a token, do the action, then call it with " +
+        "`since: <that token>`. Records added / removed nodes, text and attribute changes with timestamps, " +
+        "so you can see whether the list re-rendered before the spinner went away — order that two " +
+        "snapshots cannot show you. Recording starts when the script loads; shadow-DOM internals and this " +
+        "package's own indicator and highlight are excluded. For console output in the same window use " +
+        "dev_console, for network use dev_network.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          since: { type: "number", description: "A `next` token from an earlier call. Omit to read everything recorded so far." },
+          limit: { type: "number", description: "How many of the most recent records (default 40, max 200)." },
+        },
+      },
+      run: ({ since, limit }) => readChanges({ since, limit }).text,
+    },
+    {
+      name: name("perf"),
+      title: "Performance snapshot",
+      description:
+        "Measure how this page is actually performing: first paint, LCP, long tasks (count/total/worst), " +
+        "cumulative layout shift, navigation timings, resource totals with the slowest entries, heap use, " +
+        "and a LIVE frame-rate sample. Use it to answer 'is it slow, and is it still slow after my change' " +
+        "without opening a tracing session. The frame sample is taken while you wait, so it reflects now; " +
+        "everything else is buffered history since the page loaded. This is a blunt instrument on purpose — " +
+        "for attribution to code you need a real trace (CDP Tracing / the DevTools profiler).",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object",
+        properties: {
+          frames: { type: "number", description: "Frames to sample for the rate estimate (default 12)." },
+        },
+      },
+      run: async ({ frames }) => JSON.stringify(await perfSnapshot({ frames }), null, 1),
+    },
+    {
+      name: name("assert"),
+      title: "Assert page state",
+      description:
+        "Check several facts about the page in ONE call and get a per-check verdict — how you prove a fix " +
+        "landed instead of eyeballing a snapshot. Each check object carries one of: `exists` (CSS selector), " +
+        "`missing` (selector), `count` (selector, with atLeast/atMost), `visible` (selector — rendered with " +
+        "a box), or `text` (a ref or selector) with `contains`. Failing ANY check is an error that names " +
+        "every check and its result, so the tool result is the evidence either way. Selectors are CSS; " +
+        "refs work wherever a ref is more convenient than a selector.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          checks: {
+            type: "array",
+            description: "Each object carries exactly one of exists / missing / count / visible / text.",
+            items: {
+              type: "object",
+              properties: {
+                exists: { type: "string", description: "CSS selector that must match something." },
+                missing: { type: "string", description: "CSS selector that must match nothing." },
+                count: { type: "string", description: "CSS selector to count." },
+                atLeast: { type: "number", description: "With count: minimum matches (default 1)." },
+                atMost: { type: "number", description: "With count: maximum matches." },
+                visible: { type: "string", description: "CSS selector that must be rendered with a box." },
+                text: { type: "string", description: "Ref or CSS selector whose text/value to check." },
+                contains: { type: "string", description: "With text: substring expected (case-insensitive)." },
+              },
+            },
+          },
+        },
+        required: ["checks"],
+      },
+      run: ({ checks }) => {
+        if (!Array.isArray(checks) || !checks.length) {
+          throw new Error(
+            `Pass "checks": a list like [{"exists":"#save"},{"text":{"ref":"e3","contains":"Saved"}}].`,
+          );
+        }
+        const resolve = (spec) => {
+          const s = String(spec);
+          if (/^e\d+$/.test(s)) return snap.resolve(s) ?? null;
+          return document.querySelector(s);
+        };
+        const rendered = (el) => {
+          if (!el) return false;
+          const s = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return s.display !== "none" && s.visibility !== "hidden" && r.width > 0 && r.height > 0;
+        };
+
+        const results = checks.map((c, i) => {
+          const kind = c && Object.keys(c).find((k) => k !== "atLeast" && k !== "atMost" && k !== "contains");
+          const fail = (msg) => `FAIL ${i + 1} (${kind}): ${msg}`;
+          try {
+            if (kind === "exists") {
+              return resolve(c.exists) ? `ok   ${i + 1}: ${JSON.stringify(c.exists)} exists` : fail(`nothing matches ${JSON.stringify(c.exists)}`);
+            }
+            if (kind === "missing") {
+              return resolve(c.missing) ? fail(`${JSON.stringify(c.missing)} is still on the page`) : `ok   ${i + 1}: ${JSON.stringify(c.missing)} absent`;
+            }
+            if (kind === "count") {
+              const n = document.querySelectorAll(String(c.count)).length;
+              const lo = c.atLeast ?? 1;
+              const hi = c.atMost ?? Infinity;
+              return n >= lo && n <= hi
+                ? `ok   ${i + 1}: ${JSON.stringify(c.count)} matched ${n}`
+                : fail(`${JSON.stringify(c.count)} matched ${n}, expected ${hi === Infinity ? `>= ${lo}` : `${lo}-${hi}`}`);
+            }
+            if (kind === "visible") {
+              const el = resolve(c.visible);
+              return rendered(el)
+                ? `ok   ${i + 1}: ${JSON.stringify(c.visible)} is rendered`
+                : fail(`${JSON.stringify(c.visible)} is absent, display:none, visibility:hidden, or has no box`);
+            }
+            if (kind === "text") {
+              const el = resolve(c.text);
+              if (!el) return fail(`nothing matches ${JSON.stringify(c.text)}`);
+              // `el.value ?? textContent` is wrong twice over: a <button>'s value
+              // is "" (defined, so ?? never falls through) and a div's value is
+              // undefined. Ask the element what kind it is instead.
+              const textual =
+                el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement
+                  ? (el.value ?? "")
+                  : (el.textContent ?? "");
+              const actual = String(textual).replace(/\s+/g, " ").trim();
+              const needle = String(c.contains ?? "").toLowerCase();
+              if (!c.contains) return fail(`add "contains": the text is ${JSON.stringify(actual.slice(0, 120))}`);
+              return actual.toLowerCase().includes(needle)
+                ? `ok   ${i + 1}: text of ${JSON.stringify(c.text)} contains ${JSON.stringify(c.contains)}`
+                : fail(`text of ${JSON.stringify(c.text)} is ${JSON.stringify(actual.slice(0, 120))}, which lacks ${JSON.stringify(c.contains)}`);
+            }
+            return fail(`unknown check kind — use exists, missing, count, visible or text`);
+          } catch (e) {
+            return fail(`${e?.message ?? e}`);
+          }
+        });
+
+        const failures = results.filter((r) => r.startsWith("FAIL"));
+        if (failures.length) {
+          // Throwing (not returning FAILED) is deliberate: the harness turns a
+          // thrown tool into a non-zero exit, so 'the assertion ran and passed'
+          // and 'the assertion failed' are different shell outcomes.
+          throw new Error(`${failures.length} of ${checks.length} check(s) failed:\n${results.join("\n")}`);
+        }
+        return `All ${checks.length} check(s) passed.\n${results.join("\n")}`;
       },
     },
     {

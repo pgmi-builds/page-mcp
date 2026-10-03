@@ -16,6 +16,7 @@
  */
 import { installCapture } from "./capture.js";
 import { installNetwork } from "./network.js";
+import { installObserve } from "./observe.js";
 import { buildTools } from "./tools.js";
 import { invoke, names, register, runtimeInfo, specs, subscribe } from "./mcp.js";
 import { renderBadge } from "./badge.js";
@@ -35,6 +36,7 @@ function boot() {
   // 1. Capture BEFORE anything else can log or fetch.
   installCapture();
   installNetwork();
+  installObserve();
 
   // 2. Config from our own script tag.
   const self = document.currentScript;

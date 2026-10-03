@@ -289,6 +289,55 @@ async function run({ label, native }) {
       audit.split("\n").slice(0, 4).join("\n"),
     );
 
+    // ---- 8g. changes / assert / perf ---------------------------------------
+    // changes: token before, mutate, delta after — the record must be there and
+    // the token must move.
+    const tok = Number((await call("dev_changes", {})).match(/pass since: (\d+)/)?.[1]);
+    await page.evaluate(() => {
+      const b = document.createElement("button");
+      b.id = "probe-delta";
+      b.textContent = "PROBEDELTA";
+      document.body.appendChild(b);
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    const delta = await call("dev_changes", { since: tok });
+    record(
+      `${label}: changes reports what an action did, in order`,
+      /added/.test(delta) && /probe-delta/.test(delta) && /PROBEDELTA/.test(delta),
+      delta.split("\n").slice(0, 2).join("\n"),
+    );
+
+    // assert: a passing batch, and a failing one that must THROW (so the exit
+    // code says 'failed' instead of the body saying it politely).
+    const assertOk = await call("dev_assert", {
+      checks: [
+        { exists: "#probe-delta" },
+        { text: "#probe-delta", contains: "probedelta" },
+        { count: "canvas", atLeast: 1 },
+        { missing: "#probe-not-there" },
+      ],
+    });
+    // A thrown tool comes back through executeTool as a STRING ("Error from
+    // ..."), so nothing rejects here — assert on the shape instead. The
+    // non-zero exit that a coding agent actually sees is the CLI layer's
+    // translation of this same string, verified against browser.mjs directly.
+    const failedCall = await call("dev_assert", {
+      checks: [{ exists: "#probe-delta" }, { text: "#probe-delta", contains: "definitely not there" }],
+    });
+    const threw = /^Error from dev_assert: 1 of 2 check\(s\) failed/.test(failedCall) && /FAIL 2/.test(failedCall);
+    record(
+      `${label}: assert proves state in one call and reports per-check verdicts when one fails`,
+      /All 4 check\(s\) passed/.test(assertOk) && threw,
+      assertOk.split("\n")[0],
+    );
+
+    const perf = await call("dev_perf", { frames: 6 });
+    record(
+      `${label}: perf reports long tasks and a live frame sample`,
+      /"longTasks"/.test(perf) && /"frameSample"/.test(perf) && /"count"/.test(perf),
+      JSON.stringify(JSON.parse(perf).frameSample),
+    );
+
     // ---- 10. installing twice must not half-register ----------------------
     // Duplicate tool names are rejected by the browser, and a rejected mirror
     // is not fatal to the local registry — so a second copy used to look like
