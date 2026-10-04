@@ -373,7 +373,9 @@ async function run({ label, native }) {
     const beforeDup = (await page.evaluate(async () => (await document.modelContext.getTools()).length));
     await page.evaluate(() => {
       const s = document.createElement("script");
-      s.src = "/dist/devtools.js";
+      // Same-dir sibling, NOT origin-root /dist/devtools.js — the root path only
+      // exists on the local serve origin; a date-stamped published dir 404s it.
+      s.src = new globalThis.URL("devtools.js", location.href).href;
       document.head.appendChild(s);
     });
     await new Promise((r) => setTimeout(r, 1200));
@@ -434,7 +436,10 @@ async function runFormPass() {
     try {
       const p = await browser.newPage();
       const res = await p.goto(fixtureURL, { waitUntil: "domcontentloaded", timeout: 15000 });
-      return res?.ok ?? false;
+      // puppeteer-core v25 made Response.ok a METHOD; a bare `res?.ok` is the
+      // function itself (truthy) — the probe then never skips a missing fixture
+      // and the form pass dies on a 20s wait for a bundle that was never served.
+      return typeof res?.ok === "function" ? res.ok() : Boolean(res?.ok);
     } catch {
       return false;
     } finally {
