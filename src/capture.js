@@ -50,9 +50,9 @@ function repr(v, depth = 3, seen = new Set()) {
 const fmt = (args) => args.map((a) => (typeof a === "string" ? a : repr(a))).join(" ").slice(0, MAX_ARG);
 
 function patch(w) {
-  if (!w || w.__devWebmcpPatched) return;
+  if (!w || w.__pageMcpPatched) return;
   try {
-    w.__devWebmcpPatched = true;
+    w.__pageMcpPatched = true;
   } catch {
     return;
   }

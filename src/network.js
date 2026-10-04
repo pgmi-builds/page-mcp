@@ -66,7 +66,7 @@ function initiatorStack() {
       const at = line.trim();
       if (!at.startsWith("at ")) continue;
       if (selfUrl && at.includes(selfUrl)) continue;
-      if (at.includes("__devWebmcp")) continue;
+      if (at.includes("__pageMcp")) continue;
       // `at fn (url:line:col)` -> `url:line:col`, or `at url:line:col`
       const m = at.match(/\(([^)]+)\)\s*$/) ?? at.match(/at\s+(.+)$/);
       const loc = m ? m[1] : at.slice(3);
@@ -322,9 +322,9 @@ function patchBeacon(w) {
 }
 
 function patch(w) {
-  if (!w || w.__devWebmcpNetPatched) return;
+  if (!w || w.__pageMcpNetPatched) return;
   try {
-    w.__devWebmcpNetPatched = true;
+    w.__pageMcpNetPatched = true;
   } catch {
     return;
   }

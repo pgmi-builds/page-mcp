@@ -1,4 +1,7 @@
-# dev-webmcp docs
+# page-mcp docs
+
+> 2026-10-04 起包更名 **page-mcp**（原名 dev-webmcp）。各篇报告写作时的
+> `dev-webmcp` / `devWebmcp` / `devtools.js` 均为当时的名字，正文按惯例保持 verbatim。
 
 | # | 文档 | 作者 | 内容 |
 |---|---|---|---|

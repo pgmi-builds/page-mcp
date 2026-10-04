@@ -2,7 +2,7 @@
 /**
  * The browser tool an agent owns.
  *
- * This is NOT part of the dev-webmcp product and it is not a bridge to it. It
+ * This is NOT part of the page-mcp product and it is not a bridge to it. It
  * is the thing every coding agent already has: a Chrome it launched itself,
  * which it can attach to over CDP and evaluate JS in. Everything the agent
  * wants from the page — including the WebMCP tool surface — is reached through
@@ -26,7 +26,7 @@ import puppeteer from "puppeteer-core";
 
 const CHROME = "/usr/bin/google-chrome-stable";
 const PORT = Number(process.env.CDP_PORT ?? 9222);
-const PROFILE = process.env.CHROME_PROFILE ?? "/tmp/dev-webmcp-chrome";
+const PROFILE = process.env.CHROME_PROFILE ?? "/tmp/page-mcp-chrome";
 const BROWSER_URL = `http://127.0.0.1:${PORT}`;
 const ENDPOINT = `${BROWSER_URL}/json/version`;
 
@@ -131,7 +131,7 @@ switch (cmd) {
         typeof document.modelContext === "object" && document.modelContext !== null
           ? "available"
           : "absent",
-      devWebmcp: globalThis.devWebmcp ? globalThis.devWebmcp.version : null,
+      pageMcp: globalThis.pageMcp ? globalThis.pageMcp.version : null,
     }));
     out(info);
     browser.disconnect();
@@ -232,7 +232,7 @@ switch (cmd) {
     // and only when the app preserved the drawing buffer.
     const browser = await connect();
     const page = await currentPage(browser);
-    const path = args[0] ?? "/tmp/dev-webmcp-shot.png";
+    const path = args[0] ?? "/tmp/page-mcp-shot.png";
     const buf = await page.screenshot({ fullPage: args.includes("--full") });
     const { writeFileSync } = await import("node:fs");
     writeFileSync(path, buf);

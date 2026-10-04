@@ -1,9 +1,35 @@
 {
-  "name": "dev-webmcp",
+  "name": "page-mcp",
   "version": "0.0.1",
-  "private": true,
+  "description": "A WebMCP tool provider: drop one <script> into a web UI and the page hosts DOM/UI/devtools tools on document.modelContext for coding agents to call.",
+  "license": "MIT",
   "type": "module",
-  "description": "CDN-delivered, headless WebMCP tool provider: drop one <script> into a web UI and register DOM/UI/devtools tools that an external coding agent can call.",
+  "main": "dist/page-mcp.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mark1kwok/page-mcp.git"
+  },
+  "homepage": "https://github.com/mark1kwok/page-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/mark1kwok/page-mcp/issues"
+  },
+  "keywords": [
+    "webmcp",
+    "mcp",
+    "model-context-protocol",
+    "devtools",
+    "browser",
+    "agent",
+    "coding-agent",
+    "cdp",
+    "dom",
+    "browser-automation"
+  ],
   "scripts": {
     "build": "node build.mjs",
     "serve": "node serve.mjs",

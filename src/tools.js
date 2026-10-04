@@ -830,7 +830,7 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
         "code is required. Returns as soon as the condition is satisfied, or reports the timeout with the " +
         "current state so you can see what it was still waiting for. To wait on APPLICATION state that is " +
         "not in the DOM, call the app's own tool from the predicate — e.g. code: " +
-        "`JSON.parse(await devWebmcp.invoke('app_state')).ready === true` — rather than polling from outside.",
+        "`JSON.parse(await pageMcp.invoke('app_state')).ready === true` — rather than polling from outside.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object",

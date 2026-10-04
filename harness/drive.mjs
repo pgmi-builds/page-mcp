@@ -32,15 +32,15 @@ async function run({ label, native }) {
     const page = await browser.newPage();
     page.on("pageerror", (e) => console.log("[pageerror]", e.message.slice(0, 200)));
     await page.goto(URL, { waitUntil: "load", timeout: 45000 });
-    await page.waitForFunction("!!globalThis.devWebmcp", { timeout: 20000 });
+    await page.waitForFunction("!!globalThis.pageMcp", { timeout: 20000 });
     // let the three.js scene boot and the first frames render
     await new Promise((r) => setTimeout(r, 2500));
 
     // ---- 1. the runtime we landed on -------------------------------------
     const info = await page.evaluate(() => ({
-      ...globalThis.devWebmcp.runtime(),
+      ...globalThis.pageMcp.runtime(),
       hasDocumentModelContext: typeof document.modelContext === "object" && document.modelContext !== null,
-      tools: globalThis.devWebmcp.specs().map((t) => t.name),
+      tools: globalThis.pageMcp.specs().map((t) => t.name),
     }));
     record(
       `${label}: modelContext available (${info.native ? "native" : "polyfill"})`,
@@ -145,7 +145,7 @@ async function run({ label, native }) {
       content: `
         window.__netProbe = {
           ok: () => fetch(location.href).then((r) => r.status),
-          bad: () => fetch("/__dev-webmcp-missing__").then((r) => r.status),
+          bad: () => fetch("/__page-mcp-missing__").then((r) => r.status),
         };
       `,
     });
@@ -155,10 +155,10 @@ async function run({ label, native }) {
     const netFail = await call("dev_network", { failed_only: true });
     record(
       `${label}: network capture surfaces a request the UI never reported`,
-      badStatus === 404 && /404/.test(netFail) && /__dev-webmcp-missing__/.test(netFail),
+      badStatus === 404 && /404/.test(netFail) && /__page-mcp-missing__/.test(netFail),
       netFail.split("\n").slice(0, 6).join("\n"),
     );
-    const netOne = await call("dev_network", { filter: "__dev-webmcp-missing__" });
+    const netOne = await call("dev_network", { filter: "__page-mcp-missing__" });
     record(
       `${label}: network entries carry status, size and an initiator call site`,
       // The initiator can be `(agent-injected script):1:15`, which contains a
@@ -297,10 +297,10 @@ async function run({ label, native }) {
     // badge froze at the pack's own count.
     const badgeText = () =>
       page.evaluate(() =>
-        document.querySelector('[data-dev-webmcp="badge"]')?.shadowRoot?.querySelector(".dot span")?.textContent ?? "",
+        document.querySelector('[data-page-mcp="badge"]')?.shadowRoot?.querySelector(".dot span")?.textContent ?? "",
     );
     const badgeBefore = await badgeText();
-    await page.evaluate(() => globalThis.devWebmcp.register({ name: "app.probe_badge", run: () => "x" }));
+    await page.evaluate(() => globalThis.pageMcp.register({ name: "app.probe_badge", run: () => "x" }));
     await new Promise((r) => setTimeout(r, 250));
     const badgeAfter = await badgeText();
     record(
@@ -372,13 +372,13 @@ async function run({ label, native }) {
     // "some tools work". It is now refused outright, with a warning.
     const beforeDup = (await page.evaluate(async () => (await document.modelContext.getTools()).length));
     // Pick a bundle URL that actually exists on THIS origin: the live
-    // published dir has devtools.js as a same-dir sibling, the local serve
+    // published dir has page-mcp.js as a same-dir sibling, the local serve
     // root has it at /dist/. A 404 script tag means NO second copy is ever
     // attempted, and the guard assertion passes for the wrong reason —
     // which is exactly what happened when the sibling form met the local
     // origin. Probe, then inject the one that answers.
     const dupURL = await page.evaluate(async () => {
-      const candidates = [new globalThis.URL("devtools.js", location.href).href, "/dist/devtools.js"];
+      const candidates = [new globalThis.URL("page-mcp.js", location.href).href, "/dist/page-mcp.js"];
       for (const c of candidates) {
         try {
           const r = await fetch(c);
@@ -400,16 +400,16 @@ async function run({ label, native }) {
     const warnedDup = await call("dev_console", { tail: 20 });
     record(
       `${label}: a second copy of the bundle is refused, not half-registered`,
-      afterDup === beforeDup && /already has dev-webmcp installed/.test(warnedDup),
+      afterDup === beforeDup && /already has page-mcp installed/.test(warnedDup),
       `tools ${beforeDup} -> ${afterDup}; warning ${
-        /already has dev-webmcp installed/.test(warnedDup) ? "seen" : "MISSING"
+        /already has page-mcp installed/.test(warnedDup) ? "seen" : "MISSING"
       }`,
     );
 
     // ---- 11. tool names are validated before the browser sees them ---------
     const badName = await page.evaluate(() => {
       try {
-        globalThis.devWebmcp.register({ name: "Dev Snapshot", run: () => "x" });
+        globalThis.pageMcp.register({ name: "Dev Snapshot", run: () => "x" });
         return "ACCEPTED";
       } catch (e) {
         return e.message;
@@ -476,7 +476,7 @@ async function runFormPass() {
   try {
     const page = await browser.newPage();
     await page.goto(fixtureURL, { waitUntil: "load", timeout: 45000 });
-    await page.waitForFunction("!!globalThis.devWebmcp", { timeout: 20000 });
+    await page.waitForFunction("!!globalThis.pageMcp", { timeout: 20000 });
 
     const call = (name, input = {}) =>
       page.evaluate(

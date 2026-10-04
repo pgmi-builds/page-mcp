@@ -53,7 +53,7 @@ function licenseBlock() {
 }
 
 const banner = `/*!
- * dev-webmcp — dev/debug tools for a web UI, exposed over WebMCP.
+ * page-mcp — dev/debug tools for a web UI, exposed over WebMCP.
  * Built from source in this repository. Bundles the following third-party code:
  *
 ${licenseBlock()}
@@ -61,7 +61,7 @@ ${licenseBlock()}
 
 const result = await build({
   entryPoints: ["src/index.js"],
-  outfile: "dist/devtools.js",
+  outfile: "dist/page-mcp.js",
   bundle: true,
   format: "iife",
   platform: "browser",
@@ -76,4 +76,4 @@ const result = await build({
 });
 
 const bytes = Object.values(result.metafile.outputs)[0].bytes;
-console.log(`\ndist/devtools.js  ${(bytes / 1024).toFixed(1)} KB`);
+console.log(`\ndist/page-mcp.js  ${(bytes / 1024).toFixed(1)} KB`);

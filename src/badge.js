@@ -1,7 +1,7 @@
 /**
  * The page-corner indicator.
  *
- * A headless tool provider that silently exposes DOM access, storage and
+ * A silent tool provider that exposes DOM access, storage and
  * arbitrary JS execution to whatever agent is attached is a bad default. The
  * user of the page should be able to see that it is on, what it exposes, and
  * turn it off. Everything CDP-based shows "Chrome is being controlled by
@@ -55,14 +55,14 @@ export function renderBadge(api, cfg) {
   const own = new Set(api.specs().map((t) => t.name));
 
   const host = document.createElement("div");
-  host.setAttribute("data-dev-webmcp", "badge");
+  host.setAttribute("data-page-mcp", "badge");
   const root = host.attachShadow({ mode: "open" });
   adopt(root, CSS);
 
   const dot = document.createElement("div");
   dot.className = "dot";
   dot.tabIndex = 0;
-  dot.title = "dev-webmcp — hover for detail";
+  dot.title = "page-mcp — hover for detail";
   const panel = document.createElement("div");
   panel.className = "panel";
   const wrap = document.createElement("div");
@@ -76,7 +76,7 @@ export function renderBadge(api, cfg) {
     const count = extra.length ? `${own.size} + ${extra.length}` : `${all.length}`;
 
     dot.innerHTML = `<b></b><span></span>`;
-    dot.lastElementChild.textContent = `dev-webmcp · ${count} tools · ${mode}`;
+    dot.lastElementChild.textContent = `page-mcp · ${count} tools · ${mode}`;
 
     panel.textContent =
       `runtime   ${mode}\n` +

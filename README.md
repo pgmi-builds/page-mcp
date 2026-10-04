@@ -1,6 +1,6 @@
-# dev-webmcp
+# page-mcp
 
-A CDN-delivered, headless **WebMCP tool provider**.
+A CDN-delivered **WebMCP tool provider**.
 
 Drop one `<script>` into a web UI and that page's own JS engine starts hosting a
 set of devtools tools on `document.modelContext`:
@@ -13,9 +13,12 @@ Any agent that can reach the page can discover and call them. There is no
 server, no LLM and no chat UI in here — this is the tool surface, not an agent.
 
 ```html
-<script src="https://cdn.example/dev-webmcp.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/page-mcp/dist/page-mcp.js"></script>
+<!-- unpkg mirror: https://unpkg.com/page-mcp/dist/page-mcp.js -->
 ```
 
+`npm i page-mcp` ships the same single file at
+`node_modules/page-mcp/dist/page-mcp.js` for self-hosting.
 ---
 
 ## How it is consumed
@@ -33,7 +36,7 @@ reachable through the channel it already has.
               │  · chrome-devtools-mcp (list_webmcp_tools / execute_webmcp_tool)
               │  · Playwright / Puppeteer
               ▼
-      Chrome  ──  page + <script src="…/dev-webmcp.js">
+      Chrome  ──  page + <script src="…/page-mcp.js">
                         │
                         ▼
               document.modelContext
@@ -77,7 +80,7 @@ The highest-value half. A page can register tools that expose its own domain
 state, which no external agent can infer from the DOM:
 
 ```js
-window.devWebmcp.register({
+window.pageMcp.register({
   name: "vitrine_state",
   description: "Read the live state of the 3D viewer…",
   annotations: { readOnlyHint: true },
@@ -173,7 +176,7 @@ a consuming agent can use to filter dev tooling out of an end-user surface.
 
 ```bash
 npm install
-npm run build          # dist/devtools.js — single-file IIFE, polyfill included
+npm run build          # dist/page-mcp.js — single-file IIFE, polyfill included
 node harness/make-demo.mjs   # regenerate demo/index.html from the three.js app
 npm run serve          # http://127.0.0.1:8940/demo/
 npm run drive          # end-to-end suite, native + polyfill runtimes
@@ -191,18 +194,18 @@ node harness/browser.mjs screenshot /tmp/shot.png
 
 ### Verified
 
-- 20/20 end-to-end assertions pass in both runtimes (native flag, and polyfill
+- 56/56 end-to-end assertions pass in both runtimes (native flag, and polyfill
   with no flag): discovery via `getTools()`, `executeTool()` round trips,
   snapshot of a canvas page, disabled-control diagnosis, app-tool read and
-  mutation, console capture, eval.
+  mutation, console capture, form pass, eval. Tool count: 24 per runtime.
 - The published demo works over public HTTPS with the polyfill
   (<https://view.pc.randomhash.app/2026-10-03_webmcp-devtools-demo/>).
 - Styling survives a response-header CSP of
   `default-src 'self'; script-src 'self'; style-src 'self'` with 0 violations.
 
-Independently reproduced by a second agent on a different machine (Chrome 147 + Chrome 151):
-both runtimes 20/20, 15/15 tools usable.
-
+Independently reproduced by other agents on different machines (Chrome 147 +
+Chrome 151; docs/03, docs/10) — docs/10 records 24/24 tools usable in a third
+environment.
 Docs — [index](docs/README.md) ·
 [00 positioning](docs/00-prior-art-and-positioning.md) ·
 [01 agent usability test](docs/01-agent-usability-test.md) ·

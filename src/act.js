@@ -212,9 +212,9 @@ function ensureOverlay() {
 	if (overlayHost) return;
 	// The host element itself needs positioning, and it lives in the document
 	// tree, so its rule goes on the document's adopted sheets.
-	adopt(document, '[data-dev-webmcp="highlight"]{position:fixed;inset:0;pointer-events:none;z-index:2147483647}');
+	adopt(document, '[data-page-mcp="highlight"]{position:fixed;inset:0;pointer-events:none;z-index:2147483647}');
 	overlayHost = document.createElement("div");
-	overlayHost.setAttribute("data-dev-webmcp", "highlight");
+	overlayHost.setAttribute("data-page-mcp", "highlight");
 	overlayRoot = overlayHost.attachShadow({ mode: "open" });
 	adopt(overlayRoot, ".box{position:fixed;outline:2px solid #ffa245;background:rgba(255,162,69,.18);border-radius:2px}");
 	geomSheet = adopt(overlayRoot, "");

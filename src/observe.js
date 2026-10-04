@@ -17,7 +17,7 @@
  *   readChanges({ since: next });     // what the action caused, in order
  *
  * Self-noise is filtered: the indicator badge and the click highlight both live
- * under [data-dev-webmcp] hosts, and a highlight's geometry is painted inside a
+ * under [data-page-mcp] hosts, and a highlight's geometry is painted inside a
  * shadow root this observer cannot see. An action that mutates the page still
  * shows up — that is the point.
  */
@@ -31,7 +31,7 @@ let installed = false;
 
 function isOurs(el) {
   try {
-    return !!(el && el.nodeType === 1 && el.closest?.("[data-dev-webmcp]"));
+    return !!(el && el.nodeType === 1 && el.closest?.("[data-page-mcp]"));
   } catch {
     return false;
   }

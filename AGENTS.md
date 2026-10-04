@@ -1,4 +1,4 @@
-# dev-webmcp — workspace conventions
+# page-mcp — workspace conventions
 
 One CDN-delivered `<script>` that turns any web UI into a WebMCP tool provider
 (`document.modelContext`): DOM/UI/devtools tools an external coding agent can
@@ -8,7 +8,7 @@ Chrome and reaches the page realm via CDP `Runtime.evaluate`.
 ## Layout
 
 ```
-src/        ES modules; esbuild bundles into ONE IIFE dist/devtools.js (~106 KB)
+src/        ES modules; esbuild bundles into ONE IIFE dist/page-mcp.js (~106 KB)
 harness/    drive.mjs (56-test suite: native + polyfill + form pass),
             browser.mjs (CDP control: start|goto|eval|call|upload|stop),
             serve.mjs (static server, :8940), form-fixture.html
@@ -22,14 +22,15 @@ dist/ demo/ .tmp/  build artifacts — gitignored, rebuildable
 ## Build / test loop
 
 ```bash
-npm run build                                   # node build.mjs -> dist/devtools.js
+npm run build                                   # node build.mjs -> dist/page-mcp.js
 PORT=8940 node serve.mjs &                      # serves repo root; demo at /demo/
 DEMO_URL=http://127.0.0.1:8940/demo/ npm run drive   # expect 56/56; tool count native=24 polyfill=24
 node harness/browser.mjs stop                   # ALWAYS stop before drive (port conflict)
 ```
 
-- Deploy = `cp dist/devtools.js /home/u1/view-dir/2026-10-03_webmcp-devtools-demo/devtools.js`
-  (served at `https://view.pc.randomhash.app/2026-10-03_webmcp-devtools-demo/`, `no-store`).
+- Deploy = `cp dist/page-mcp.js /home/u1/view-dir/2026-10-03_webmcp-devtools-demo/devtools.js`
+  (served at `https://view.pc.randomhash.app/2026-10-03_webmcp-devtools-demo/`, `no-store`;
+  that demo dir predates the 0.0.1 rename — its index.html still loads `devtools.js`).
 - **Stale-tab trap** (docs/07 §2): a tab opened before a deploy keeps the old
   bundle until reload. Reload and verify the loaded build, not the server file.
 - Verify deploy with a FRESH `browser.mjs start <url>`; the badge renders in a
@@ -62,6 +63,7 @@ Route decided so far: npm publish → jsDelivr/unpkg mirror (registry-like,
 immutable versions) unless overridden. Still needed before first publish:
 npm account/token, package name + scope, start version (proposal: 0.1.0),
 un-`private` package.json with a `files` whitelist (dist + README + LICENSE).
-Old absolute path `~/workspaces/browser-agent/dev-webmcp` is dead — the repo
-now lives at `~/workspaces/dev-webmcp` (historical docs keep the old path on
-purpose: they are verbatim records).
+Old absolute paths `~/workspaces/browser-agent/dev-webmcp` and
+`~/workspaces/dev-webmcp` are dead — the repo now lives at
+`~/workspaces/page-mcp`, renamed for the 0.0.1 npm init release (historical
+docs keep the old names on purpose: they are verbatim records).

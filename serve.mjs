@@ -1,7 +1,7 @@
 /**
- * Static server for the dev-webmcp tree.
+ * Static server for the page-mcp tree.
  *
- * Serves the repo root so the demo at /demo/ can load /dist/devtools.js with a
+ * Serves the repo root so the demo at /demo/ can load /dist/page-mcp.js with a
  * root-absolute path — which is how it will work from a CDN.
  * Cache-Control: no-store because a stale bundle during development is a
  * wasted debugging session.
@@ -43,4 +43,4 @@ createServer(async (req, res) => {
     res.writeHead(404, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
     res.end("not found");
   }
-}).listen(port, host, () => console.log(`dev-webmcp serving ${root} on http://${host}:${port}/demo/`));
+}).listen(port, host, () => console.log(`page-mcp serving ${root} on http://${host}:${port}/demo/`));

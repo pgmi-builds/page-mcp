@@ -20,25 +20,25 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const SRC = process.env.SRC ?? "/home/u1/view-dir/2022-09-23_3D-model/three-js_cube_copy.html";
-const BUNDLE = process.env.BUNDLE_SRC ?? "/dist/devtools.js";
+const BUNDLE = process.env.BUNDLE_SRC ?? "/dist/page-mcp.js";
 const OUT = process.env.OUT ?? resolve(root, "demo/index.html");
 
 let html = readFileSync(SRC, "utf8");
 
-const scriptTag = `<!-- dev-webmcp: registers devtools tools on document.modelContext -->
+const scriptTag = `<!-- page-mcp: registers devtools tools on document.modelContext -->
 <script src="${BUNDLE}" data-prefix="dev_" data-badge="on"></script>
 `;
 
-if (!html.includes("dev-webmcp: registers")) {
+if (!html.includes("page-mcp: registers")) {
   html = html.replace("</head>", scriptTag + "</head>");
 }
 
 const appTools = `
-/* ================= dev-webmcp: application-specific tools =================
+/* ================= page-mcp: application-specific tools =================
    Everything in this module is module-scoped, so it is invisible to both a DOM
    snapshot AND to eval — the page renders into a WebGL canvas. Registering
    domain tools is how the application tells an agent what it actually is. */
-window.devWebmcp?.register({
+window.pageMcp?.register({
   name: 'vitrine_state',
   title: 'Vitrine viewer state',
   description:
@@ -70,7 +70,7 @@ window.devWebmcp?.register({
   }, null, 2),
 });
 
-window.devWebmcp?.register({
+window.pageMcp?.register({
   name: 'vitrine_set_shader',
   title: 'Set shader mode',
   description:

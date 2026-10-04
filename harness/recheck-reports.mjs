@@ -45,14 +45,14 @@ const glb = readFileSync(new URL("../fixtures/triangle.glb", import.meta.url)).t
 sec("surface (after reload)");
 const surface = await page.evaluate(async () => {
   const tools = await document.modelContext.getTools();
-  const host = document.querySelector('[data-dev-webmcp="badge"]');
+  const host = document.querySelector('[data-page-mcp="badge"]');
   return {
     count: tools.length,
     names: tools.map((t) => t.name).sort(),
     dot: host?.shadowRoot?.querySelector(".dot span")?.textContent ?? "(no dot text)",
     panelHead: (host?.shadowRoot?.querySelector(".panel")?.textContent ?? "").split("\n").slice(0, 4).join(" | "),
-    runtime: globalThis.devWebmcp?.runtime?.(),
-    version: globalThis.devWebmcp?.version,
+    runtime: globalThis.pageMcp?.runtime?.(),
+    version: globalThis.pageMcp?.version,
   };
 });
 console.log("count:", surface.count, "| version:", surface.version, "| runtime:", j(surface.runtime));
@@ -153,8 +153,8 @@ console.log(`PNG ${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)} / ${buf.length}
 await client.detach();
 
 // ------------------------------------------ 05 claims, live tool surface
-sec("05 §2 · unknown property, via devWebmcp.invoke");
-console.log(String(await page.evaluate(() => globalThis.devWebmcp.invoke("dev_click", { ref: "e1", bogus: 1 }))).slice(0, 260));
+sec("05 §2 · unknown property, via pageMcp.invoke");
+console.log(String(await page.evaluate(() => globalThis.pageMcp.invoke("dev_click", { ref: "e1", bogus: 1 }))).slice(0, 260));
 
 sec("05 §2 · unknown property, via modelContext.executeTool (the real spec path)");
 console.log(
@@ -172,33 +172,33 @@ console.log(
 
 sec("05 §1 · dev_wait, predicate that throws (FULL message)");
 const waitThrow = await page.evaluate(() =>
-  globalThis.devWebmcp.invoke("dev_wait", { code: "nope.value > 1", timeout_ms: 300 }).catch((e) => `THREW: ${e.message}`),
+  globalThis.pageMcp.invoke("dev_wait", { code: "nope.value > 1", timeout_ms: 300 }).catch((e) => `THREW: ${e.message}`),
 );
 console.log(String(waitThrow));
 console.log("--> contains 'predicate THREW':", /predicate THREW/.test(String(waitThrow)));
 
 sec("05 §1 · dev_wait, predicate false but valid (FULL message)");
 const waitFalse = await page.evaluate(() =>
-  globalThis.devWebmcp.invoke("dev_wait", { code: "1 > 2", timeout_ms: 300 }).catch((e) => `THREW: ${e.message}`),
+  globalThis.pageMcp.invoke("dev_wait", { code: "1 > 2", timeout_ms: 300 }).catch((e) => `THREW: ${e.message}`),
 );
 console.log(String(waitFalse));
 console.log("--> contains 'predicate THREW':", /predicate THREW/.test(String(waitFalse)));
 
 sec("05 §1 · dev_upload include_snapshot default");
 const up1 = await page.evaluate(
-  (b64) => globalThis.devWebmcp.invoke("dev_upload", { files: [{ name: "triangle.glb", base64: b64 }] }),
+  (b64) => globalThis.pageMcp.invoke("dev_upload", { files: [{ name: "triangle.glb", base64: b64 }] }),
   glb,
 );
 console.log("omitted  ->", String(up1).slice(0, 160));
 console.log("   has 'Page now':", /Page now/.test(String(up1)), " (05: false)");
 const up2 = await page.evaluate(
-  (b64) => globalThis.devWebmcp.invoke("dev_upload", { files: [{ name: "triangle.glb", base64: b64 }], include_snapshot: true }),
+  (b64) => globalThis.pageMcp.invoke("dev_upload", { files: [{ name: "triangle.glb", base64: b64 }], include_snapshot: true }),
   glb,
 );
 console.log("explicit ->", String(up2).slice(0, 160));
 console.log("   has 'Page now':", /Page now/.test(String(up2)), " (05: true)");
 
 sec("app state after upload");
-console.log(String(await page.evaluate(() => globalThis.devWebmcp.invoke("vitrine_state"))).slice(0, 200));
+console.log(String(await page.evaluate(() => globalThis.pageMcp.invoke("vitrine_state"))).slice(0, 200));
 
 await browser.disconnect();

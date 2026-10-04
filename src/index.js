@@ -1,5 +1,5 @@
 /**
- * dev-webmcp — entry point.
+ * page-mcp — entry point.
  *
  * Drop one script tag into a page and the page's own JS engine starts hosting
  * a set of devtools tools on `document.modelContext`. Any agent that can reach
@@ -7,7 +7,7 @@
  * built-in agent, an extension) can then discover and call them. There is no
  * server, no LLM and no chat UI in here.
  *
- *   <script src="https://cdn.example/dev-webmcp.js"></script>
+ *   <script src="https://cdn.example/page-mcp.js"></script>
  *
  * Config via data attributes on the script tag:
  *   data-prefix="dev_"     tool name prefix (default "dev_")
@@ -71,23 +71,23 @@ function boot() {
     runtime: runtimeInfo,
     dispose: () => disposers.forEach((d) => d()),
   };
-  globalThis.devWebmcp = api;
+  globalThis.pageMcp = api;
 
   if (cfg.badge) renderBadge(api, cfg);
 
   console.debug(
-    `[dev-webmcp] ${VERSION} ready — ${names().length} tools, ` +
+    `[page-mcp] ${VERSION} ready — ${names().length} tools, ` +
     `runtime=${runtimeInfo().native ? "native" : runtimeInfo().polyfilled ? "polyfill" : "none"}`,
   );
 
   return api;
 }
 
-const SENTINEL = "__devWebmcpInstalled";
+const SENTINEL = "__pageMcpInstalled";
 
 if (globalThis[SENTINEL]) {
   console.warn(
-    "[dev-webmcp] this page already has dev-webmcp installed — ignoring this second copy. " +
+    "[page-mcp] this page already has page-mcp installed — ignoring this second copy. " +
     "Two copies would register the same tool names, and the browser rejects duplicates.",
   );
 } else {
@@ -95,4 +95,4 @@ if (globalThis[SENTINEL]) {
   boot();
 }
 
-export default globalThis.devWebmcp ?? null;
+export default globalThis.pageMcp ?? null;
