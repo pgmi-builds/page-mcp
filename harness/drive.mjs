@@ -371,13 +371,30 @@ async function run({ label, native }) {
     // is not fatal to the local registry — so a second copy used to look like
     // "some tools work". It is now refused outright, with a warning.
     const beforeDup = (await page.evaluate(async () => (await document.modelContext.getTools()).length));
-    await page.evaluate(() => {
-      const s = document.createElement("script");
-      // Same-dir sibling, NOT origin-root /dist/devtools.js — the root path only
-      // exists on the local serve origin; a date-stamped published dir 404s it.
-      s.src = new globalThis.URL("devtools.js", location.href).href;
-      document.head.appendChild(s);
+    // Pick a bundle URL that actually exists on THIS origin: the live
+    // published dir has devtools.js as a same-dir sibling, the local serve
+    // root has it at /dist/. A 404 script tag means NO second copy is ever
+    // attempted, and the guard assertion passes for the wrong reason —
+    // which is exactly what happened when the sibling form met the local
+    // origin. Probe, then inject the one that answers.
+    const dupURL = await page.evaluate(async () => {
+      const candidates = [new globalThis.URL("devtools.js", location.href).href, "/dist/devtools.js"];
+      for (const c of candidates) {
+        try {
+          const r = await fetch(c);
+          if (r.ok) return c;
+        } catch {}
+      }
+      return null;
     });
+    if (!dupURL) {
+      record(`${label}: a second copy of the bundle is refused, not half-registered`, false, "no bundle URL found on this origin to attempt a double install");
+    } else
+    await page.evaluate((u) => {
+      const s = document.createElement("script");
+      s.src = u;
+      document.head.appendChild(s);
+    }, dupURL);
     await new Promise((r) => setTimeout(r, 1200));
     const afterDup = await page.evaluate(async () => (await document.modelContext.getTools()).length);
     const warnedDup = await call("dev_console", { tail: 20 });

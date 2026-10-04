@@ -3,3 +3,4 @@ dist/
 demo/
 .tmp/
 *.log
+.agents/
