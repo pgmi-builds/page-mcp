@@ -57,12 +57,16 @@ node harness/browser.mjs stop                   # ALWAYS stop before drive (port
 - Headless Chrome needs software GL for the demo's three.js:
   `--enable-unsafe-swiftshader --use-angle=swiftshader` (already in harness).
 
-## Publish (pending decisions)
+## Publish (0.0.1 shipped 2026-10-04)
 
-Route decided so far: npm publish → jsDelivr/unpkg mirror (registry-like,
-immutable versions) unless overridden. Still needed before first publish:
-npm account/token, package name + scope, start version (proposal: 0.1.0),
-un-`private` package.json with a `files` whitelist (dist + README + LICENSE).
+- npm: <https://www.npmjs.org/package/page-mcp> — unscoped, MIT, tarball
+  whitelist dist + README + LICENSE, `main: dist/page-mcp.js`. jsDelivr and
+  unpkg mirror the tarball (registry-like, immutable versions).
+- GitHub: <https://github.com/pgmi-builds/page-mcp> (public, branch `main`).
+  Owner is pgmi-builds — it pairs with the npm account of the same name; the
+  gh keyring also lists mark1kwok, but API calls resolve to pgmi-builds.
+- Next release: bump version in package.json AND src/index.js VERSION,
+  `npm run build`, drive 56/56, commit, `npm publish`.
 Old absolute paths `~/workspaces/browser-agent/dev-webmcp` and
 `~/workspaces/dev-webmcp` are dead — the repo now lives at
 `~/workspaces/page-mcp`, renamed for the 0.0.1 npm init release (historical
