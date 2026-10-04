@@ -50,6 +50,7 @@ window.devWebmcp?.register({
     exhibit: user ? user.name : 'placeholder · cube',
     triangles: user ? user.tris : 12,
     reveal: +state.reveal.toFixed(3),
+    visibility: document.visibilityState,
     revealing: state.revealing,
     shader: state.shaderHolo ? 'holographic' : 'original',
     hovered: state.hoverHit,

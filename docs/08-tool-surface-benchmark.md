@@ -35,7 +35,7 @@
 |---|---|---|---|---|---|
 | 页面大纲 + 稳定 ref | ✓ | ✓ | ✓ | **超** | 我们的 ref 跨快照**稳定**（WeakMap）；PWM/CDM 的 uid 每次快照重建。见 §3.1 |
 | 读取单个元素 | ✓ | ✓ | ✓ | 有 | |
-| click / fill / type / press / select / hover / scroll | ✓ | ✓ | ✓ | **超** | 真实 pointer 序列 + React 原生 setter；见 `act.js` |
+| click / fill / type / press / select / hover / scroll | ✓ | ✓ | ✓ | **超** | 真实 pointer 序列 + `el.click()` 激活行为（提交按钮真提交、链接真导航）+ React 原生 setter；见 `act.js` |
 | 文件上传 | ✓(host) | ✓(host) | ✓(host) | **超** | 三家都要宿主路径；我们页内 URL/base64，且能命中**隐藏** input |
 | 等待条件 | ✓(sleep) | ✓ | ✓ | **超** | 我们的 `dev_wait` 能等**应用状态**（在谓词里调应用工具），三家只能等 DOM/时间 |
 | console / 未捕获错误 | ✗ | ✓ | ✓ | 有 | 页内环形缓冲，无 CDP 也能用 |
@@ -75,7 +75,7 @@
 |---|---|---|
 | 整页/元素截图、PDF | 文档**无法光栅化自己**；`canvas.toDataURL` 在帧外**返回全黑合法 PNG**（实测，见 `docs/07` §3.1） | `Page.captureScreenshot` / `printToPDF` |
 | 跨域导航、多标签生命周期 | 页内被限制在自己 origin 和一个文档里 | `Page.navigate` / `Target.*` |
-| **可信**输入（`isTrusted:true`） | 页内合成事件 `isTrusted` 恒为 false | `Input.dispatchMouseEvent` |
+| **可信**输入（`isTrusted:true`） | 页内合成事件 `isTrusted` 恒为 false：隐式提交（Enter）、焦点遍历（Tab）等浏览器内部默认行为不发生（form-fixture 实测）；页面自己的 handler 照常收到 | `Input.dispatchMouseEvent` |
 | 视口尺寸 / 设备模拟 / 限速 / 地理位置 / UA | 页面**不能改自己的视口** | `Emulation.*` |
 | 性能 trace / CrUX / 堆快照 / Lighthouse | 需要浏览器进程级采样 | `Tracing.*` / `HeapProfiler.*` |
 | 磁盘路径读写、HttpOnly / 跨域 cookie | 页面读不到宿主磁盘，也读不到 HttpOnly | 宿主 |

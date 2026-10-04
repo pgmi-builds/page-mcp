@@ -41,6 +41,19 @@ reachable through the channel it already has.
               └── <tools the app registers itself>
 ```
 
+### `executeTool` calling contract, including the failure shapes
+
+```
+executeTool(tool, "{}")              // ✓ the second argument is a JSON STRING
+executeTool("name", "{}")            // ✗ TypeError: RegisteredTool must be an object
+executeTool(tool, {})                // ✗ DOMException UnknownError: Failed to parse input
+                                     //   arguments — a DOMException, NOT a TypeError, so
+                                     //   harnesses that classify errors by constructor
+                                     //   name mis-sort this one as a tool bug
+```
+
+The result is the tool's own raw string, not a CallToolResult wrapper.
+
 Two details worth stating precisely:
 
 1. **CDP `Runtime.evaluate` runs in the page's own realm**, so the `tools`

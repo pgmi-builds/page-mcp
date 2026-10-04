@@ -12,6 +12,8 @@
 | 07 | [recheck-of-05-and-06-2026-10-03](07-recheck-of-05-and-06-2026-10-03.md) | 本 session | 对 05/06 的独立复验：05 全部通过、06 两处更正、陈旧标签页陷阱 |
 | 08 | [tool-surface-benchmark](08-tool-surface-benchmark.md) | 本 session | 对 BU / Playwright MCP / DevTools MCP 的能力对标：抄什么、超什么、**不做什么**、执行顺序 |
 | 09 | [agent-as-user-2026-10-03](09-agent-as-user-2026-10-03.md) | **另一 agent（新工具的真实用户）** | 22+2 工具面的真实使用报告（进行中/刚落地，以文件为准） |
+| 10 | [independent-omp-browser-2026-10-04](10-independent-omp-browser-2026-10-04.md) | **另一 agent（omp / GLM，陌生通用 harness）** | 第三环境复现：24/24 工具通、宿主侧文件选择器上传全链路；新发现隐藏标签页 rAF 节流陷阱、executeTool 错误姿势报错形态 |
+| 11 | [suggestions-third-env-2026-10-04](11-suggestions-third-env-2026-10-04.md) | **另一 agent（omp / GLM）** | 第三环境实测导出的建议稿：dev_wait 调应用工具、环境自省、页内截图证据、常规 UI 测试矩阵；附 vitrine_state 澄清（**建议稿，待拍板**） |
 | — | [research/](research/) | 调研子代理 | 一手清单：Browser Use 24 actions、Playwright MCP 72、DevTools MCP 66、页内库、WebMCP 生态、polyfill 注解实测 |
 
 > 03/04 是**独立第三方复现**，不是本 session 自述。它们原名为 `01-…` / `02-…`，
@@ -39,8 +41,9 @@
 
 7. **重构可以丢掉一行调用而全部测试保持绿色**（本 session 扩工具面时踩到）。`register()` 里的 `emit()` 被一次锚点编辑吞掉——注册照常、`specs()` 照常、46 条测试全绿，只有**页角 badge 的计数永远停在 22**，因为全页只有它在观察注册表。规则：**一个行为没有测试盯着，它就处于随时会坏的状态**；badge 现在有回归测试了。
 
----
+8. **「工具说做成了」和「页面真的变了」之间可以隔着整个 bug 类别**（form fixture 落地时发现）。`dev_click` 从第一天起就从未派发过 click 事件——指针序列齐全、返回 "Clicked ✓"、驱测全绿；直到第一张有 click 语义的页面（form-fixture 的提交按钮）出现才暴露：submit 从不触发。此前所有被测页面对 click 没有任何可观察反应，测试只能断言工具自己的成功字符串。修复 = 指针序列后接 `el.click()` 让激活行为真正发生；表单测试现在断言**页面自己的 submit 事件与状态**，并用裸 `el.click()` 做环境对照。
 
+---
 ## 发现项总台账
 
 | 来源 | 发现 | 状态 |
@@ -68,3 +71,12 @@
 | **06** | **canvas 帧外读取返回全黑的合法 PNG** | **本 session 复现（解码 nonBlack=0）；但 06 记的 944710 字符未复现，本次 11274 字符——全黑图不可能压到 700 KB** |
 | **06** | **hit-test 遮挡误报（disabled 控件）** | **本 session 复现，但成因要改**：是应用自己的 `.actions button:disabled{pointer-events:none}`，不是「disabled 控件不参与命中测试」 |
 | **06** | **CDP clip 裁剪尺寸精确** | **本 session 复现：130×33**（字节数随内容变，06 记 4770 B，本次 4481 B） |
+| 10 | 隐藏标签页 rAF 节流：状态真实但 reveal 卡 0，易误判为页面 bug | **已做（本 session）：`vitrine_state` 加 `visibility`，`dev_perf` 加 `visibility`/`rAFThrottled`，驱测覆盖** |
+| 10 | executeTool(tool, 对象参数) → DOMException（非 TypeError）；正确姿势见 03 §2.2 | **已写进 README "`executeTool` calling contract" 小节（本 session）** |
+| 10 | 一次 getTools() 返回 23 条缺 dev_fill，未复现 | 孤立异常，置信度低 |
+| 10 | omp harness 新开标签页首次 evaluate 必失败（非本项目） | 已上报 omp |
+| **11** | **dev_wait 谓词调不到应用工具（「最需要等待的状态最难等待」）** | **前提不成立：谓词里 `devWebmcp.invoke` 本来就通（本 session 实测 Condition met after 0ms）；那次失败是 intro 期 triangles=0 的时序** |
+| **11** | **换常规 DOM UI 的输入类测试矩阵** | **已建 `harness/form-fixture.html` 并进 drive（本 session）** |
+| 11 | 页内截图证据（无宿主 CDP 的消费方无法验证画面） | 维持原决策：像素归 CDP（docs/08 §1.4）；已在 docs/09 MISSING 条目记录 |
+| **本 session（form fixture 落地时发现，03–10 全部报告均未发现）** | **`dev_click` 从未派发过 click 事件：指针序列齐全但 activation 缺失，提交按钮点了不提交、链接不导航、复选框不勾** | **已修：`synthClick` 在指针序列后接 `el.click()`（激活行为生效、仍尊重 preventDefault）；form pass 断言页面自己的 submit+状态，裸 `el.click()` 做环境对照** |
+| 本 session | 合成 Tab 键能到达页面 handler（正向路径首次验证），但焦点遍历是 trusted-only，Tab 不移焦点 | 已测（form pass）；`dev_press` 描述已写明该边界 |

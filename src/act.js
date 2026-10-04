@@ -37,6 +37,15 @@ export function synthClick(el) {
   el.dispatchEvent(new MouseEvent("mousedown", { ...init, buttons: 1 }));
   el.dispatchEvent(new Pointer("pointerup", { ...init, buttons: 0 }));
   el.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0 }));
+  // Then the click itself — via el.click(), not dispatchEvent. A dispatchEvent
+  // click fires listeners but runs NO activation behavior: a submit button
+  // would not submit, a link would not navigate, a checkbox would not toggle,
+  // a label would not forward to its control — "Clicked ✓" that did nothing.
+  // el.click() fires the click event AND runs activation behavior (still
+  // respecting preventDefault in any listener). Elements without .click()
+  // (e.g. SVG) fall back to the dispatchEvent form, activation-less.
+  if (typeof el.click === "function") el.click();
+  else el.dispatchEvent(new MouseEvent("click", init));
 }
 
 /**

@@ -18,7 +18,7 @@ import { boxOf, auditGeometry } from "./geometry.js";
 import { readChanges } from "./observe.js";
 import { perfSnapshot } from "./perf.js";
 
-const refProp = (desc) => ({ type: "string", description: desc });
+const refProp = (desc) => ({ type: "string", description: `${desc} A ref from the snapshot, or a CSS selector.` });
 
 export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterAction = true } = {}) {
   const snap = new Snapshotter();
@@ -27,12 +27,22 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
   const snapshotText = (opts = {}) => snap.snapshot({ maxNodes: opts.maxNodes ?? maxNodes });
 
   /** Resolve a ref, or fail with a fresh outline so the model can re-orient. */
-  const need = (ref) => {
-    const el = snap.resolve(ref);
+  /**
+   * Resolve an element spec — a ref from the snapshot, or a CSS selector.
+   *
+   * Selectors exist because the thing an agent wants is sometimes the thing a
+   * snapshot does not carry: a canvas, a map tile, a field it wants to address
+   * before re-snapshotting. Refs stay the primary form (stable across
+   * snapshots); a selector is resolved live, so it is always fresh but never
+   * tracked. On failure the message says which of the two was attempted.
+   */
+  const need = (spec) => {
+    const s = String(spec);
+    const isRef = /^e\d+$/.test(s);
+    const el = isRef ? snap.resolve(s) : document.querySelector(s);
     if (!el) {
-      throw new Error(
-        `No live element for ref "${ref}" — it was removed or replaced. Current page:\n${snapshotText()}`,
-      );
+      const what = isRef ? `live element for ref "${s}"` : `element matching selector "${s}"`;
+      throw new Error(`No ${what} — ${isRef ? "it was removed or replaced" : "nothing on the page matches"}. Current page:\n${snapshotText()}`);
     }
     return el;
   };
@@ -393,7 +403,9 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
       title: "Click",
       description:
         "Click an element by ref. Dispatches a real pointer/mouse sequence, so menus and popovers that " +
-        "open on pointerdown work. The element is flashed on screen so a human can see what was touched.",
+        "open on pointerdown work, then fires the click itself with activation behavior, so submit buttons " +
+        "submit, links navigate and checkboxes toggle. The element is flashed on screen so a human can see " +
+        "what was touched.",
       inputSchema: {
         type: "object",
         properties: { ref: refProp("Element ref from the snapshot."), include_snapshot: includeSnapshotProp },
@@ -506,7 +518,11 @@ export function buildTools({ prefix = "dev_", maxNodes = 200, snapshotAfterActio
       name: name("press"),
       title: "Press key",
       description:
-        "Press a key or key name on an element or the focused element. Use for Enter-to-submit, Escape-to-close, Tab, arrow keys. Omit ref to target whatever currently has focus.",
+        "Press a key or key name on an element or the focused element. Use it when the APP listens for the " +
+        "key: Escape-to-close, arrow-key menus, Tab traps, an input with its own keydown handler. It does " +
+        "NOT trigger browser-internal behaviors that require a trusted event — Enter will not implicitly " +
+        "submit a form and Tab will not move focus; click the submit button or focus the next control " +
+        "instead. Omit ref to target whatever currently has focus.",
       inputSchema: {
         type: "object",
         properties: {

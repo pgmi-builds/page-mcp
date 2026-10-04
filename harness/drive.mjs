@@ -411,6 +411,184 @@ async function run({ label, native }) {
 const native = await run({ label: "native", native: true });
 const poly = await run({ label: "polyfill", native: false });
 
+/**
+ * The input tools' first positive pass on a NORMAL DOM UI.
+ *
+ * Every prior verification of fill/type/select/press happened on the canvas
+ * demo, where those tools have no positive path at all — the reports kept
+ * noting it (docs/10 §7, docs/11 §4) and it was the largest untested surface
+ * in the pack. Runs against harness/form-fixture.html when the page's origin
+ * serves it (the deployed demo does not, so a live-URL drive run skips this
+ * pass with a note rather than failing).
+ */
+async function runFormPass() {
+  console.log(`\n${"=".repeat(72)}\n== form (normal DOM UI)\n${"=".repeat(72)}`);
+  // `URL` above is the demo-url STRING (it shadows the global), hence globalThis.
+  const fixtureURL = new globalThis.URL("/harness/form-fixture.html", URL).href;
+  const served = await (async () => {
+    const browser = await puppeteer.launch({
+      executablePath: "/usr/bin/google-chrome-stable",
+      headless: "new",
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const p = await browser.newPage();
+      const res = await p.goto(fixtureURL, { waitUntil: "domcontentloaded", timeout: 15000 });
+      return res?.ok ?? false;
+    } catch {
+      return false;
+    } finally {
+      await browser.close();
+    }
+  })();
+  if (!served) {
+    console.log(`NOTE  form: no form fixture at this origin — input-tool pass skipped`);
+    return;
+  }
+
+  const browser = await puppeteer.launch({
+    executablePath: "/usr/bin/google-chrome-stable",
+    headless: "new",
+    args: ["--no-sandbox", "--disable-dev-shm-usage"],
+  });
+  try {
+    const page = await browser.newPage();
+    await page.goto(fixtureURL, { waitUntil: "load", timeout: 45000 });
+    await page.waitForFunction("!!globalThis.devWebmcp", { timeout: 20000 });
+
+    const call = (name, input = {}) =>
+      page.evaluate(
+        async (n, i) => {
+          const tools = await document.modelContext.getTools();
+          const tool = tools.find((t) => t.name === n);
+          if (!tool) return `<<no tool named ${n}>>`;
+          return await document.modelContext.executeTool(tool, JSON.stringify(i));
+        },
+        name,
+        input,
+      );
+
+    // 1. batch fill, then verify the page's own event log saw proper
+    //    input+change pairs (the native-setter path is the whole point).
+    await call("dev_fill", {
+      fields: [
+        { ref: "#name", value: "Ada Lovelace" },
+        { ref: "#bio", value: "Wrote the first note about the machine." },
+      ],
+    });
+    const events1 = await page.evaluate(() => window.__events.join(","));
+    record(
+      `form: batch fill fires input+change on real fields`,
+      // the fixture logs bare ids: input:name,change:name,input:bio,change:bio
+      /input:name/.test(events1) && /change:name/.test(events1) && /change:bio/.test(events1),
+      events1,
+    );
+
+    // 2. select: list first, then choose by label.
+    const listed = await call("dev_select", { ref: "#plan" });
+    await call("dev_select", { ref: "#plan", value: "Free" });
+    const plan = await page.evaluate(() => document.getElementById("plan").value);
+    record(
+      `form: select lists options and chooses by label`,
+      /value="ent" label="Enterprise/.test(listed) && /disabled/.test(listed) && plan === "free",
+      `plan=${plan}; listing ${listed.split("\n").length - 1} lines`,
+    );
+
+    // 3. type: per-keystroke, into the field batch fill already set.
+    await call("dev_type", { ref: "#name", text: " Countess" });
+    const typed = await page.evaluate(() => document.getElementById("name").value);
+    record(`form: type appends per keystroke`, typed === "Ada Lovelace Countess", JSON.stringify(typed));
+
+    // 3b. Keys: the KeyboardEvent DOES reach page handlers (positive path on a
+    //     normal DOM UI, never verifiable on the canvas demo) — but Tab does
+    //     NOT traverse focus: traversal is a trusted-only default action, same
+    //     class as implicit submit. The tool documents this; the test pins it.
+    await page.evaluate(() => document.getElementById("name").focus());
+    await call("dev_press", { key: "ArrowRight" });
+    await call("dev_press", { key: "Tab" });
+    const focusAfterTab = await page.evaluate(() => document.activeElement.id);
+    const keyEvents = await page.evaluate(() => window.__events.filter((e) => e.startsWith("keydown:")));
+    record(
+      `form: dev_press delivers keys to handlers; Tab traversal stays trusted-only`,
+      keyEvents.includes("keydown:name:ArrowRight") &&
+        keyEvents.includes("keydown:name:Tab") &&
+        focusAfterTab === "name",
+      `keys=${JSON.stringify(keyEvents)} focusAfterTab=${focusAfterTab || "(none)"}`,
+    );
+
+    // 4. submit by CLICKING, then assert the page's own state in one call.
+    await page.evaluate(() => {
+      window.__submitFired = [];
+      document.getElementById("signup").addEventListener("submit", () => {
+        window.__submitFired.push(
+          `submit@${Math.round(performance.now())} name=${JSON.stringify(document.getElementById("name").value)}`,
+        );
+      });
+    });
+    // (Implicit submission on Enter is browser-internal and needs a trusted
+    // event; synthetic Enter fires the page's keydown handlers but does not
+    // submit — so the agent-visible path is clicking the submit button.)
+    const formClick = await call("dev_click", { ref: "#go", include_snapshot: false });
+    // Capture dev_click's OWN submit before the bare-click control below resets
+    // the log — the control must never be what the main assertion measures.
+    const devSubmitFired = await page.evaluate(() => window.__submitFired.slice());
+    const assertOut = await call("dev_assert", {
+      checks: [
+        { exists: "#status" },
+        { text: "#status", contains: "\"plan\":\"free\"" },
+        { visible: "#later" },
+      ],
+    });
+    const status = await page.evaluate(() => document.getElementById("status").textContent);
+    record(
+      `form: click submits and assert verifies the app's own state`,
+      /All 3 check\(s\) passed/.test(assertOut) &&
+        /"tos":false/.test(status) &&
+        devSubmitFired.length === 1 &&
+        devSubmitFired[0].includes('"Ada Lovelace Countess"'),
+      `click=${String(formClick).split("\n")[0]} | submitFired=${JSON.stringify(devSubmitFired)} | status=${status.slice(0, 90)}`,
+    );
+
+    // Control: a bare el.click() on the same button MUST also submit. It runs
+    // second so it cannot contaminate the measurement above, and it splits
+    // "dev_click/synthClick doesn't activate" from "the environment blocks
+    // submission" if this pass ever goes red again.
+    const bareStatus = await page.evaluate(() => {
+      window.__submitFired.length = 0;
+      document.getElementById("go").click();
+      return document.getElementById("status").textContent.slice(0, 40);
+    });
+    const bareSubmitted = await page.evaluate(() => window.__submitFired.length);
+    record(
+      `form: bare el.click() control submits (environment sanity)`,
+      bareSubmitted === 1 && /submitted/.test(bareStatus),
+      `bareSubmitFired=${bareSubmitted} status=${bareStatus}`,
+    );
+
+    // 5. disabled control: the diagnostic, not a silent success.
+    const snap2 = await call("dev_snapshot", { max_nodes: 300 });
+    const laterRef = (snap2.split("\n").find((l) => l.includes("Save for later"))?.match(/\[(e\d+)\]/) ?? [])[1];
+    const laterClick = laterRef ? await call("dev_click", { ref: laterRef, include_snapshot: false }) : "<<no ref>>";
+    record(
+      `form: clicking a disabled button explains itself on real DOM`,
+      /disabled/.test(laterClick),
+      String(laterClick).split("\n")[0],
+    );
+
+    // 6. one ordered delta for the whole interaction.
+    const changed = await call("dev_changes", { limit: 12 });
+    record(
+      `form: changes shows the submitted state update`,
+      /text/.test(changed) && /submitted/.test(changed),
+      changed.split("\n").slice(0, 3).join("\n"),
+    );
+  } finally {
+    await browser.close();
+  }
+}
+
+await runFormPass();
+
 console.log(`\n${"=".repeat(72)}`);
 const failed = results.filter((r) => !r.pass);
 console.log(`${results.length - failed.length}/${results.length} passed`);

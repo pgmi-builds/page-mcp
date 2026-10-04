@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FORM FIXTURE — normal DOM UI</title>
+<!-- Served from the repo root by serve.mjs; loads the same bundle the demo uses.
+     Exists because every input tool until now was only ever exercised on a
+     canvas page, where fill/type/select/press have no positive path at all
+     (docs/10 §7, docs/11 §4). -->
+<script src="/dist/devtools.js" data-prefix="dev_"></script>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 34rem; }
+  label { display: block; margin-top: .8rem; }
+  input, textarea, select, button { font: inherit; display: block; margin-top: .2rem; }
+  #status { background: #f4f2ee; padding: .6rem; min-height: 1.2rem; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Sign up</h1>
+<form id="signup">
+  <label>Name <input id="name" name="name" placeholder="Your name"></label>
+  <label>Bio <textarea id="bio" rows="2"></textarea></label>
+  <label>Plan
+    <select id="plan">
+      <option value="free">Free</option>
+      <option value="pro" selected>Pro</option>
+      <option value="ent" disabled>Enterprise (contact us)</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="tos"> I agree to the terms</label>
+  <p>
+    <button type="submit" id="go">Sign up</button>
+    <button type="button" id="later" disabled>Save for later</button>
+  </p>
+</form>
+<pre id="status">nothing submitted yet</pre>
+<script>
+  const val = (id) => document.getElementById(id).value;
+  window.__events = [];
+  for (const el of document.querySelectorAll("input, textarea, select")) {
+    el.addEventListener("input", () => window.__events.push("input:" + el.id));
+    el.addEventListener("change", () => window.__events.push("change:" + el.id));
+    el.addEventListener("keydown", (e) => window.__events.push("keydown:" + el.id + ":" + e.key));
+  }
+  document.getElementById("signup").addEventListener("submit", (e) => {
+    e.preventDefault();
+    document.getElementById("status").textContent = "submitted " + JSON.stringify({
+      name: val("name"),
+      bio: val("bio"),
+      plan: val("plan"),
+      tos: document.getElementById("tos").checked,
+    });
+  });
+</script>
+</body>
+</html>

@@ -115,7 +115,14 @@ export async function perfSnapshot({ frames = 12 } = {}) {
           frames: gaps.length,
           avgFps: +(1000 / avg).toFixed(1),
           worstGapMs: ms(worst),
-          note: worst > 50 ? "a frame took long enough to be visible as a stutter" : "no visible stutters in the sample",
+          // A hidden tab's rAF is throttled hard, which reads as 4 fps and a
+          // broken page when the truth is 'nothing is rendering because nobody
+          // can see it'. Third environment hit this; say it up front.
+          visibility: document.visibilityState,
+          rAFThrottled: document.hidden === true,
+          note:
+            (document.hidden === true ? "tab is HIDDEN — rAF is throttled, these numbers are not real frame rate; " : "") +
+            (worst > 50 ? "a frame took long enough to be visible as a stutter" : "no visible stutters in the sample"),
         });
       } else requestAnimationFrame(tick);
     };
