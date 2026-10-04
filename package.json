@@ -12,11 +12,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mark1kwok/page-mcp.git"
+    "url": "git+https://github.com/pgmi-builds/page-mcp.git"
   },
-  "homepage": "https://github.com/mark1kwok/page-mcp#readme",
+  "homepage": "https://github.com/pgmi-builds/page-mcp#readme",
   "bugs": {
-    "url": "https://github.com/mark1kwok/page-mcp/issues"
+    "url": "https://github.com/pgmi-builds/page-mcp/issues"
   },
   "keywords": [
     "webmcp",
